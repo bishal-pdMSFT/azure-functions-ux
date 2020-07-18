@@ -76,11 +76,9 @@ export class LinuxSiteEnvironment extends Environment {
       runCheck: () => ({ status: 'disabled' }),
     };
 
-    this.scenarioChecks[ScenarioIds.enableLinkAPIM] = {
-      id: ScenarioIds.enableLinkAPIM,
-      runCheck: () => {
-        return { status: 'disabled' };
-      },
+    this.scenarioChecks[ScenarioIds.enableGitHubAction] = {
+      id: ScenarioIds.enableGitHubAction,
+      runCheck: () => ({ status: 'enabled' }),
     };
   }
 

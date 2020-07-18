@@ -1,4 +1,3 @@
-import { WorkerRuntimeLanguages } from 'app/shared/models/constants';
 import { ArmUtil } from 'app/shared/Utilities/arm-utils';
 import { BroadcastEvent, EventMessage } from 'app/shared/models/broadcast-event';
 import { SiteService } from './../../shared/services/site.service';
@@ -13,7 +12,6 @@ import {
   NotificationIds,
   SlotOperationState,
   SwapOperationType,
-  FunctionAppVersion,
   ARMApiVersions,
   Constants,
 } from './../../shared/models/constants';
@@ -39,16 +37,17 @@ import { Url } from './../../shared/Utilities/url';
 import { CacheService } from '../../shared/services/cache.service';
 import { AuthzService } from '../../shared/services/authz.service';
 import { ArmSiteDescriptor, ArmPlanDescriptor } from '../../shared/resourceDescriptors';
-import { Site, SiteAvailabilitySates } from '../../shared/models/arm/site';
+import { Site, SiteAvailabilityState } from '../../shared/models/arm/site';
 import { FunctionAppContext } from 'app/shared/function-app-context';
 import { FunctionAppService } from 'app/shared/services/function-app.service';
 import { FeatureComponent } from 'app/shared/components/feature-component';
 import { errorIds } from '../../shared/models/error-ids';
 import { TopBarNotification } from 'app/top-bar/top-bar-models';
-import { OpenBladeInfo, EventVerbs } from '../../shared/models/portal';
+import { OpenBladeInfo, EventVerbs, FrameBladeParams } from '../../shared/models/portal';
 import { SlotSwapInfo } from '../../shared/models/slot-events';
 import { FlightingUtil } from 'app/shared/Utilities/flighting-utility';
 import { FunctionService } from 'app/shared/services/function.service';
+import { runtimeIsV2, runtimeIsV3 } from 'app/shared/models/functions-version-info';
 
 @Component({
   selector: 'site-summary',
@@ -80,6 +79,7 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
   public swapControlsOpen = false;
   public targetSwapSlot: string;
   public siteAvailabilityStateNormal = false;
+  public isLinux = false;
 
   private _viewInfo: TreeViewInfo<SiteData>;
   private _subs: Subscription[];
@@ -131,7 +131,8 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
       })
       .switchMap(context => {
         this.context = context;
-        this.siteAvailabilityStateNormal = context.site.properties.availabilityState === SiteAvailabilitySates.Normal;
+        this.siteAvailabilityStateNormal = context.site.properties.availabilityState === SiteAvailabilityState.Normal;
+        this.isLinux = ArmUtil.isLinuxApp(this.context.site);
 
         this._setResourceInformation(context);
         this._setAppServicePlanData(context);
@@ -139,6 +140,27 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
         this._setAppState(context);
 
         this.clearBusyEarly();
+
+        this.notifications = [
+          {
+            id: NotificationIds.clientCertEnabled,
+            message: this.ts.instant(PortalResources.tryFunctionsNewExperience),
+            iconClass: '',
+            learnMoreLink: null,
+            level: 'info',
+            clickCallback: () => {
+              const overviewBladeInput = {
+                detailBlade: 'AppsOverviewBlade',
+                detailBladeInputs: {
+                  id: this.context.site.id,
+                },
+              };
+              this._portalService.openBlade(overviewBladeInput, 'top-overview-banner');
+            },
+          },
+        ];
+
+        this._globalStateService.setTopBarNotifications(this.notifications);
 
         // Go ahead and assume write access at this point to unveal everything. This allows things to work when the RBAC API fails and speeds up reveal. In
         // cases where this causes a false positive, the backend will take care of giving a graceful failure.
@@ -153,18 +175,16 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
             this._functionAppService.pingScmSite(context),
             this._functionAppService.getRuntimeGeneration(context),
             this._functionService.getFunctions(context.site.id),
-            this._siteService.getAppSettings(context.site.id, true),
             this._siteService.getSiteConfig(context.site.id, true),
             this._scenarioService.checkScenarioAsync(ScenarioIds.appInsightsConfigurable, { site: context.site }),
-            (p, s, l, slots, ping, version, functions, appSettings, siteConfig, appInsightsEnablement) => ({
+            (p, s, l, slots, ping, version, functions, siteConfig, appInsightsEnablement) => ({
               hasWritePermission: p,
               hasSwapPermission: s,
               hasReadOnlyLock: l,
               slotsList: slots.isSuccessful ? slots.result : [],
               pingedScmSite: ping.isSuccessful ? ping.result : false,
               runtime: version,
-              functionInfo: functions.isSuccessful ? functions.result : [],
-              appSettings: appSettings,
+              functionsInfo: functions.isSuccessful ? functions.result.value : [],
               siteConfig: siteConfig,
               appInsightsEnablement: appInsightsEnablement,
             })
@@ -183,7 +203,7 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
               slotsList: [],
               pingedScmSite: ping.isSuccessful ? ping.result : false,
               runtime: null,
-              functionInfo: [],
+              functionsInfo: [],
               appInsightsEnablement: appInsightsEnablement,
             })
           );
@@ -201,11 +221,12 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
           this._scenarioService.checkScenario(ScenarioIds.showSiteAvailability, { site: this.context.site }).status === 'disabled' ||
           !this.siteAvailabilityStateNormal;
 
-        const appSettings = r.appSettings && r.appSettings.result && r.appSettings.result.properties;
-        const workerRuntime = appSettings && appSettings[Constants.functionsWorkerRuntimeAppSettingsName];
-        const isPowershell = workerRuntime && WorkerRuntimeLanguages[workerRuntime] === WorkerRuntimeLanguages.powershell;
-
-        if (r.functionInfo.length === 0 && !this.isStandalone && this.hasWriteAccess && r.runtime === FunctionAppVersion.v2) {
+        if (
+          r.functionsInfo.length === 0 &&
+          !this.isStandalone &&
+          this.hasWriteAccess &&
+          (runtimeIsV2(r.runtime) || runtimeIsV3(r.runtime))
+        ) {
           this.showQuickstart = true;
         }
 
@@ -219,90 +240,77 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
           });
         }
 
-        this.notifications = [];
-        if (ArmUtil.isLinuxDynamic(this.context.site)) {
-          this.notifications.push({
-            id: NotificationIds.dynamicLinux,
-            message: this.ts.instant(PortalResources.dynamicLinuxPreview),
-            iconClass: 'fa fa-exclamation-triangle warning',
-            learnMoreLink: Links.dynamicLinuxPreviewLearnMore,
-            clickCallback: null,
-          });
-          this._globalStateService.setTopBarNotifications(this.notifications);
-        } else if (isPowershell) {
-          this.notifications.push({
-            id: NotificationIds.powershellPreview,
-            message: this.ts.instant(PortalResources.powershellPreview),
-            iconClass: 'fa fa-exclamation-triangle warning',
-            learnMoreLink: Links.powershellPreviewLearnMore,
-            clickCallback: null,
-          });
-          this._globalStateService.setTopBarNotifications(this.notifications);
-        }
-
         if (
-          r.appInsightsEnablement &&
-          r.appInsightsEnablement.status === 'enabled' &&
-          appSettings &&
-          !appSettings[Constants.instrumentationKeySettingName]
+          ArmUtil.isContainerApp(this.context.site) &&
+          r.siteConfig &&
+          r.siteConfig.isSuccessful &&
+          r.siteConfig.result.properties.linuxFxVersion &&
+          r.siteConfig.result.properties.linuxFxVersion === Constants.defaultFunctionAppDockerImage
         ) {
           this.notifications.push({
-            id: 'testnote',
-            message: this.ts.instant(PortalResources.appInsightsNotConfigured),
+            id: 'containerSettings',
+            message: this.ts.instant(PortalResources.containerSettingsNotConfigured),
             iconClass: 'fa fa-exclamation-triangle warning',
             learnMoreLink: null,
             clickCallback: () => {
-              const appInsightBladeInput = {
-                detailBlade: 'AppServicesEnablementBlade',
+              const containerSettingsBladeInput: OpenBladeInfo<FrameBladeParams> = {
+                detailBlade: 'ContainerSettingsFrameBlade',
                 detailBladeInputs: {
-                  resourceUri: this.context.site.id,
-                  linkedComponent: null,
+                  id: this.context.site.id,
+                  data: {
+                    resourceId: this.context.site.id,
+                    isFunctionApp: true,
+                    subscriptionId: this.subscriptionId,
+                    location: this.context.site.location,
+                    os: 'linux',
+                    fromMenu: true,
+                    containerFormData: null,
+                  },
                 },
-                extension: 'AppInsightsExtension',
               };
 
-              this._portalService.openBlade(appInsightBladeInput, 'top-overview-banner').subscribe(
+              this._portalService.openBlade(containerSettingsBladeInput, 'top-overview-banner').subscribe(
                 result => {
                   this._viewInfo.node.refresh(null, true);
                 },
                 err => {
-                  this._logService.error(LogCategories.applicationInsightsConfigure, errorIds.applicationInsightsConfigure, err);
+                  this._logService.error(LogCategories.containerSettings, errorIds.containerSettingsConfigure, err);
                 }
               );
             },
           });
           this._globalStateService.setTopBarNotifications(this.notifications);
-        }
+        } else {
+          if (r.siteConfig && r.siteConfig.isSuccessful) {
+            const siteConfig = r.siteConfig.result && r.siteConfig.result.properties;
+            const showIpRestrictionsWarning =
+              siteConfig &&
+              ((siteConfig.ipSecurityRestrictions && siteConfig.ipSecurityRestrictions.length > 1) ||
+                (siteConfig.scmIpSecurityRestrictions && siteConfig.scmIpSecurityRestrictions.length > 1));
+            if (showIpRestrictionsWarning) {
+              this.notifications.push({
+                id: NotificationIds.ipRestrictions,
+                message: this.ts.instant(PortalResources.ipRestrictionsWarning),
+                iconClass: 'fa fa-exclamation-triangle warning',
+                learnMoreLink: Links.ipRestrictionsLearnMore,
+                clickCallback: null,
+              });
+              this._globalStateService.setTopBarNotifications(this.notifications);
+            }
+          } else {
+            this._logService.error(LogCategories.siteConfig, errorIds.failedToGetSiteConfig, r.siteConfig.error);
+          }
 
-        if (r.siteConfig && r.siteConfig.isSuccessful) {
-          const siteConfig = r.siteConfig.result && r.siteConfig.result.properties;
-          const showIpRestrictionsWarning =
-            siteConfig &&
-            ((siteConfig.ipSecurityRestrictions && siteConfig.ipSecurityRestrictions.length > 1) ||
-              (siteConfig.scmIpSecurityRestrictions && siteConfig.scmIpSecurityRestrictions.length > 1));
-          if (showIpRestrictionsWarning) {
+          if (this.context.site.properties && this.context.site.properties.clientCertEnabled) {
             this.notifications.push({
-              id: NotificationIds.ipRestrictions,
-              message: this.ts.instant(PortalResources.ipRestrictionsWarning),
+              id: NotificationIds.clientCertEnabled,
+              message: this.ts.instant(PortalResources.clientCertWarning),
               iconClass: 'fa fa-exclamation-triangle warning',
-              learnMoreLink: Links.ipRestrictionsLearnMore,
+              learnMoreLink: Links.clientCertEnabledLearnMore,
               clickCallback: null,
             });
             this._globalStateService.setTopBarNotifications(this.notifications);
           }
-        } else {
-          this._logService.error(LogCategories.siteConfig, errorIds.failedToGetSiteConfig, r.siteConfig.error);
-        }
-
-        if (this.context.site.properties && this.context.site.properties.clientCertEnabled) {
-          this.notifications.push({
-            id: NotificationIds.clientCertEnabled,
-            message: this.ts.instant(PortalResources.clientCertWarning),
-            iconClass: 'fa fa-exclamation-triangle warning',
-            learnMoreLink: Links.clientCertEnabledLearnMore,
-            clickCallback: null,
-          });
-          this._globalStateService.setTopBarNotifications(this.notifications);
         }
 
         return !this.hideAvailability ? this._siteService.getAvailability(this.context.site.id) : Observable.of(null);
@@ -354,7 +362,7 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
       return;
     }
 
-    this._armService.post(`${this.context.site.id}/publishxml`, null, ARMApiVersions.websiteApiVersion20160301).subscribe(response => {
+    this._armService.post(`${this.context.site.id}/publishxml`, null, ARMApiVersions.antaresApiVersion20181101).subscribe(response => {
       const publishXml = response.text();
 
       // http://stackoverflow.com/questions/24501358/how-to-set-a-header-for-a-http-get-request-and-trigger-file-download/24523253#24523253
@@ -527,7 +535,7 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
       detailBladeInputs: { resourceUri: this.context.site.id },
     };
 
-    const newBladeInfo: OpenBladeInfo = {
+    const newBladeInfo: OpenBladeInfo<FrameBladeParams> = {
       detailBlade: 'SwapSlotsFrameBlade',
       detailBladeInputs: { id: this.context.site.id },
       openAsContextBlade: true,
@@ -774,7 +782,7 @@ export class SiteSummaryComponent extends FeatureComponent<TreeViewInfo<SiteData
   }
 
   private _setAppState(context: FunctionAppContext) {
-    if (context.site.properties.availabilityState !== SiteAvailabilitySates.Normal) {
+    if (context.site.properties.availabilityState !== SiteAvailabilityState.Normal) {
       this.state = this.ts.instant(PortalResources.limited);
       this.stateIcon = 'image/warning.svg';
     } else {

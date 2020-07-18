@@ -159,7 +159,7 @@ export class FunctionEditComponent extends NavigableComponent implements OnDestr
       .takeUntil(this.ngUnsubscribe)
       .concatMap(() => {
         return Observable.zip(
-          this._cacheService.getArm(`${this.context.site.id}/config/web`, null, ARMApiVersions.websiteApiVersion20181101),
+          this._cacheService.getArm(`${this.context.site.id}/config/web`, null, ARMApiVersions.antaresApiVersion20181101),
           this._cacheService.postArm(`${this.context.site.id}/config/appsettings/list`),
           this._functionAppService.getSlotsList(this.context),
           this._functionAppService.pingScmSite(this.context),
@@ -192,7 +192,7 @@ export class FunctionEditComponent extends NavigableComponent implements OnDestr
             iconClass: 'fa fa-exclamation-triangle warning',
             learnMoreLink: 'https://go.microsoft.com/fwlink/?linkid=830855',
             clickCallback: () => {
-              this._portalService.openBlade(
+              this._portalService.openFrameBlade(
                 {
                   detailBlade: 'SiteConfigSettingsFrameBladeReact',
                   detailBladeInputs: {
@@ -234,15 +234,16 @@ export class FunctionEditComponent extends NavigableComponent implements OnDestr
           });
         }
         if (result.slotsResponse) {
-          let slotsStorageSetting = appSettings.properties[Constants.slotsSecretStorageSettingsName];
-          if (!!slotsStorageSetting) {
-            slotsStorageSetting = slotsStorageSetting.toLowerCase();
-          }
           const numSlots = result.slotsResponse.length;
-          if (numSlots > 0 && slotsStorageSetting !== Constants.slotsSecretStorageSettingsValue.toLowerCase()) {
+          if (numSlots > 0 && !this._functionAppService.isSlotsSupported(appSettings)) {
+            const message =
+              FunctionsVersionInfoHelper.getFunctionGeneration(extensionVersion) === 'V1'
+                ? this._translateService.instant(PortalResources.topBar_slotsHostId)
+                : this._translateService.instant(PortalResources.topBar_slotsHostIdV2);
+
             notifications.push({
               id: NotificationIds.slotsHostId,
-              message: this._translateService.instant(PortalResources.topBar_slotsHostId),
+              message: message,
               iconClass: 'fa fa-exclamation-triangle warning',
               learnMoreLink: '',
               clickCallback: null,

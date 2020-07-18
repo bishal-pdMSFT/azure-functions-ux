@@ -17,6 +17,14 @@ import {
   BladeResult,
   EventFilter,
   EventVerbs,
+  TokenType,
+  CheckPermissionRequest,
+  CheckPermissionResponse,
+  CheckLockRequest,
+  CheckLockResponse,
+  LockType,
+  FrameBladeParams,
+  SendToken2,
 } from './../models/portal';
 import {
   Event,
@@ -42,6 +50,8 @@ import { Subscription } from '../models/subscription';
 import { ConfigService } from 'app/shared/services/config.service';
 import { SlotSwapInfo, SlotNewInfo } from '../models/slot-events';
 import { ByosData } from '../../site/byos/byos';
+import { LogService } from './log.service';
+import { LogCategories } from '../models/constants';
 
 export interface IPortalService {
   getStartupInfo();
@@ -56,7 +66,7 @@ export interface IPortalService {
     getAppSettingCallback: (appSettingName: string) => void,
     bladeName?: string
   );
-  getAdToken(tokenType: 'graph' | 'azureTfsApi');
+  getAdToken(tokenType: TokenType);
   getSpecCosts(query: SpecCostQueryInput): Observable<SpecCostQueryResult>;
   getSubscription(subscriptionId: string): Observable<Subscription>;
   closeBlades();
@@ -71,6 +81,8 @@ export interface IPortalService {
   returnPcv3Results<T>(results: T);
   broadcastMessage<T>(id: BroadcastMessageId, resourceId: string, metadata?: T);
   returnByosSelections(selections: ByosData);
+  hasPermission(resourceId: string, actions: string[]);
+  hasLock(resourceId: string, type: LockType);
 }
 
 @Injectable()
@@ -89,8 +101,8 @@ export class PortalService implements IPortalService {
     'portal.microsoftazure.de',
     'portal.azure.cn',
     'portal.azure.us',
-    'powerapps.cloudapp.net',
-    'web.powerapps.com',
+    'portal.azure.eaglex.ic.gov',
+    'portal.azure.microsoft.scloud',
   ];
 
   private startupInfo: StartupInfo<any> | null;
@@ -110,7 +122,12 @@ export class PortalService implements IPortalService {
   }
 
   private frameId;
-  constructor(private _broadcastService: BroadcastService, private _aiService: AiService, private _configService: ConfigService) {
+  constructor(
+    private _broadcastService: BroadcastService,
+    private _aiService: AiService,
+    private _configService: ConfigService,
+    private _logService: LogService
+  ) {
     this.startupInfoObservable = new ReplaySubject<StartupInfo<void>>(1);
     this.notificationStartStream = new Subject<NotificationStartedInfo>();
     this.frameId = Url.getParameterByName(null, 'frameId');
@@ -130,7 +147,8 @@ export class PortalService implements IPortalService {
 
     const appsvc = window.appsvc;
     const getStartupInfoObj: GetStartupInfo = {
-      iframeHostName: appsvc && appsvc.env && appsvc.env.hostName ? appsvc.env.hostName : null,
+      iframeHostName: appsvc && appsvc.env && appsvc.env.hostName ? appsvc.env.hostName : '',
+      iframeAppName: appsvc && appsvc.env && appsvc.env.appName ? appsvc.env.appName : '',
     };
 
     // This is a required message. It tells the shell that your iframe is ready to receive messages.
@@ -154,7 +172,7 @@ export class PortalService implements IPortalService {
   }
 
   // Deprecated
-  openBladeDeprecated(bladeInfo: OpenBladeInfo, source: string) {
+  openBladeDeprecated<T = any>(bladeInfo: OpenBladeInfo<T>, source: string) {
     this.logAction(source, 'open-blade ' + bladeInfo.detailBlade);
     this._aiService.trackEvent('/site/open-blade', {
       targetBlade: bladeInfo.detailBlade,
@@ -165,10 +183,15 @@ export class PortalService implements IPortalService {
     this.postMessage(Verbs.openBlade, this._packageData(bladeInfo));
   }
 
+  // Deprecated
+  openFrameBladeDeprecated<T = any>(bladeInfo: OpenBladeInfo<FrameBladeParams<T>>, source: string) {
+    this.openBladeDeprecated(bladeInfo, source);
+  }
+
   // Returns an Observable which resolves when blade is close.
   // Optionally may also return a value
-  openBlade(bladeInfo: OpenBladeInfo, source: string): Observable<BladeResult<any>> {
-    const payload: DataMessage<OpenBladeInfo> = {
+  openBlade<T = any>(bladeInfo: OpenBladeInfo<T>, source: string): Observable<BladeResult<any>> {
+    const payload: DataMessage<OpenBladeInfo<T>> = {
       operationId: Guid.newGuid(),
       data: bladeInfo,
     };
@@ -180,6 +203,10 @@ export class PortalService implements IPortalService {
       .map((r: DataMessage<DataMessageResult<BladeResult<any>>>) => {
         return r.data.result;
       });
+  }
+
+  openFrameBlade<T = any>(bladeInfo: OpenBladeInfo<FrameBladeParams<T>>, source: string): Observable<BladeResult<any>> {
+    return this.openBlade(bladeInfo, source);
   }
 
   openCollectorBlade(resourceId: string, name: string, source: string, getAppSettingCallback: (appSettingName: string) => void): void {
@@ -238,7 +265,7 @@ export class PortalService implements IPortalService {
       });
   }
 
-  getAdToken(tokenType: 'graph' | 'azureTfsApi') {
+  getAdToken(tokenType: TokenType) {
     this.logAction('portal-service', `get-ad-token: ${tokenType}`, null);
     const operationId = Guid.newGuid();
 
@@ -261,6 +288,54 @@ export class PortalService implements IPortalService {
         } else {
           return Observable.throw(o.data);
         }
+      });
+  }
+
+  hasPermission(resourceId: string, actions: string[]) {
+    this.logAction('portal-service', `has-permission: ${resourceId}`, null);
+    const operationId = Guid.newGuid();
+
+    const payload: DataMessage<CheckPermissionRequest> = {
+      operationId,
+      data: {
+        resourceId,
+        actions,
+      },
+    };
+
+    this.postMessage(Verbs.hasPermission, this._packageData(payload));
+    return this.operationStream
+      .filter(o => o.operationId === operationId)
+      .first()
+      .switchMap((o: DataMessage<DataMessageResult<CheckPermissionResponse>>) => {
+        if (o.data.status !== 'success') {
+          this._logService.error(LogCategories.portalServiceHasPermission, 'hasPermission', payload);
+        }
+        return Observable.of(o.data.result.hasPermission);
+      });
+  }
+
+  hasLock(resourceId: string, type: LockType) {
+    this.logAction('portal-service', `has-lock: ${resourceId}`, null);
+    const operationId = Guid.newGuid();
+
+    const payload: DataMessage<CheckLockRequest> = {
+      operationId,
+      data: {
+        resourceId,
+        type,
+      },
+    };
+
+    this.postMessage(Verbs.hasLock, this._packageData(payload));
+    return this.operationStream
+      .filter(o => o.operationId === operationId)
+      .first()
+      .switchMap((o: DataMessage<DataMessageResult<CheckLockResponse>>) => {
+        if (o.data.status !== 'success') {
+          this._logService.error(LogCategories.portalServiceHasLock, 'hasLock', payload);
+        }
+        return Observable.of(o.data.result.hasLock);
       });
   }
 
@@ -300,8 +375,8 @@ export class PortalService implements IPortalService {
     this.postMessage(Verbs.closeBlades, this._packageData({}));
   }
 
-  closeSelf() {
-    this.postMessage(Verbs.closeSelf, '');
+  closeSelf(data?: any) {
+    this.postMessage(Verbs.closeSelf, data || '');
   }
 
   updateBladeInfo(title: string, subtitle: string) {
@@ -443,12 +518,17 @@ export class PortalService implements IPortalService {
       // Prefer whatever Ibiza sends us if hosted in iframe.  This is mainly for national clouds
       ArmServiceHelper.armEndpoint = this.startupInfo.armEndpoint ? this.startupInfo.armEndpoint : ArmServiceHelper.armEndpoint;
       window.appsvc.env.azureResourceManagerEndpoint = ArmServiceHelper.armEndpoint;
+      window.appsvc.env.armToken = this.startupInfo.token;
+      window.appsvc.resourceId = this.startupInfo.resourceId;
+      window.appsvc.feature = this.startupInfo.featureInfo && this.startupInfo.featureInfo.feature;
 
       this.startupInfoObservable.next(this.startupInfo);
       this.logTokenExpiration(this.startupInfo.token, '/portal-service/token-new-startupInfo');
-    } else if (methodName === Verbs.sendToken) {
-      if (this.startupInfo) {
-        this.startupInfo.token = <string>data;
+    } else if (methodName === Verbs.sendToken2) {
+      const sendTokenMessage = <SendToken2>data;
+      const token = sendTokenMessage && sendTokenMessage.token;
+      if (this.startupInfo && !!token && this.startupInfo.token !== token) {
+        this.startupInfo.token = token;
         this.startupInfoObservable.next(this.startupInfo);
         this.logTokenExpiration(this.startupInfo.token, '/portal-service/token-new');
       }

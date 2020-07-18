@@ -1,10 +1,11 @@
 import { SpecResourceSet } from '../../../../models/BillingModels';
-import { ArmObj, ServerFarm } from '../../../../models/WebAppModels';
 import PortalCommunicator from '../../../../portal-communicator';
 import { BillingService } from '../../../../utils/BillingService';
 import { LogCategories } from '../../../../utils/LogCategories';
 import LogService from '../../../../utils/LogService';
 import i18next from 'i18next';
+import { ArmObj } from '../../../../models/arm-obj';
+import { ServerFarm } from '../../../../models/serverFarm/serverfarm';
 
 export interface PriceSpecInput {
   specPickerInput: SpecPickerInput<PlanSpecPickerData>;
@@ -29,11 +30,16 @@ export interface PlanSpecPickerData {
   allowAseV2Creation: boolean;
   forbiddenSkus: string[];
   forbiddenComputeMode?: number;
+  isFunctionApp?: boolean;
   isLinux: boolean;
   isXenon: boolean;
-  isElastic?: boolean;
+  hyperV: boolean;
   selectedLegacySkuName: string; // Looks like "small_standard"
   selectedSkuCode?: string; // Can be set in update scenario for initial spec selection
+  isElastic?: boolean;
+  isNewFunctionAppCreate?: boolean; // NOTE(shimedh): We need this additional flag temporarily to make it work with old and new FunctionApp creates.
+  // Since old creates always shows elastic premium sku's along with other sku's.
+  // However, in new full screen creates it would be based on the plan type selected which will determing isElastic boolean value.
 }
 
 export interface PriceSpecDetail {
@@ -79,10 +85,10 @@ export abstract class PriceSpec {
   public disabledInfoLink: string;
   public priceString: string;
   public price: number;
+  public priceIsBaseline = false;
 
   protected _billingService: BillingService;
   protected _logService: LogService;
-
   protected _t: i18next.TFunction;
 
   constructor(t: i18next.TFunction) {

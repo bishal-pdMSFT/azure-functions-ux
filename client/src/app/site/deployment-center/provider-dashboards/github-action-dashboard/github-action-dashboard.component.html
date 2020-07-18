@@ -1,0 +1,179 @@
+<div *ngIf="showDisconnectModal" id="my-modal" class="modal fade in" style="display: block">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>{{ 'githubActionDisconnectConfirmationTitle' | translate }}</h2>
+                <button type="button" class="close" data-dismiss="modal" aria-label="close" (click)="cancelDisconnectPrompt()">&times;</button>
+            </div>
+            <div class="modal-body">
+                {{ 'githubActionDisconnectConfirmation' | translate }}
+            </div>
+            <div class="modal-body">
+                <input class="message-icon" type="checkbox" (change)="toggleDeleteWorkflowState()">
+                {{ githubActionDisconnectDeleteWorkflowText }}
+            </div>
+            <div class="modal-body">
+                <button type="button" class="disconnect-button" (click)="disconnect()" aria-label="disconnect">
+                    {{ 'githubActionDisconnectButton' | translate }}
+                </button>
+                <button type="button" class="cancel-disconnect-button" (click)="cancelDisconnectPrompt()" aria-label="cancel">
+                    {{ 'githubActionCancelDisconnectButton' | translate }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div *ngIf="showDisconnectModal" class="modal-backdrop fade in"></div>
+
+<ng-sidebar-container style="height:100vh" [animate]="true">
+    <div ng-sidebar-content>
+        <command-bar>
+            <command displayText="{{ 'browse' | translate }}" iconUrl="image/external.svg" (click)="browseToSite()"></command>
+            <command displayText="{{ 'refresh' | translate }}" iconUrl="image/refresh.svg" (click)="refresh()"></command>
+            <command displayText="{{ 'disconnect' | translate }}" iconUrl="image/Disconnect.svg" (click)="showDisconnectPrompt()"></command>
+            <command
+                displayText="{{ 'deploymentCredentialsTitle' | translate }}"
+                iconUrl="image/key.svg"
+                (click)="showDeploymentCredentials()"
+            ></command>
+        </command-bar>
+
+        <info-box *ngIf="!errorMessage" typeClass="info" [infoText]="'githubActionInfo' | translate" [infoLink]="githubActionLink">
+        </info-box>
+
+        <info-box *ngIf="errorMessage" typeClass="error" [infoText]="errorMessage">
+        </info-box>
+
+        <div id="essentials-container">
+            <div class="essentials-col">
+                <div>
+                    <label id="github-action-dashboard-label-source">
+                        {{ 'build' | translate }}
+                    </label>
+                    <div tabindex="0" id="github-action-dashboard-value-source" aria-labelledby="github-action-dashboard-label-source github-action-dashboard-value-source">
+                        <a tabindex="0" (click)="githubActionOnClick()">
+                            GitHub Action
+                        </a>
+                    </div>
+                </div>
+                <div>
+                    <label id="github-action-dashboard-label-build">
+                        {{ 'source' | translate }}
+                    </label>
+                    <div tabindex="0" id="github-action-dashboard-value-build" aria-labelledby="github-action-dashboard-label-build github-action-dashboard-value-build">
+                        GitHub
+                    </div>
+                </div>
+            </div>
+            <div class="essentials-col">
+                <div>
+                    <label id="github-action-dashboard-label-repository">
+                        {{ 'repository' | translate }}
+                    </label>
+                    <div *ngIf="repositoryText" tabindex="0" id="github-action-dashboard-value-repository" aria-labelledby="github-action-dashboard-label-repository github-action-dashboard-value-repository">
+                        <a tabindex="0" (click)="repositoryOnClick()">
+                            {{ repositoryText }}
+                        </a>
+                        <copy-pre [content]="repositoryText" [onlyCopyButton]="true"></copy-pre>
+                    </div>
+                    <div *ngIf="!repositoryText">
+                        {{ 'functionMonitor_loading' | translate }}
+                    </div>
+                </div>
+                <div>
+                    <label id="github-action-dashboard-label-branch">
+                        {{ 'branch' | translate }}
+                    </label>
+                    <div *ngIf="branchText" tabindex="0" id="github-action-dashboard-value-branch" aria-labelledby="github-action-dashboard-label-branch github-action-dashboard-value-branch">
+                        <a tabindex="0" (click)="branchOnClick()">
+                            {{ branchText }}
+                        </a>
+                        <copy-pre [content]="branchText" [onlyCopyButton]="true"></copy-pre>
+                    </div>
+                    <div *ngIf="!branchText">
+                        {{ 'functionMonitor_loading' | translate }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="list-container">
+            <ngx-datatable
+                #myTable
+                class='fluent expandable'
+                columnMode="flex"
+                [rows]="tableItems"
+                [groupRowsBy]="'date'"
+                [headerHeight]="30"
+                [footerHeight]="0"
+                [rowHeight]="'40'"
+                [virtualization]="true"
+                [groupExpansionDefault]="true"
+                [messages]="tableMessages">
+                <!-- Group Header Template -->
+                <ngx-datatable-group-header [rowHeight]="100" #myGroupHeader>
+                    <ng-template let-group="group" let-expanded="expanded" ngx-datatable-group-header-template>
+                        <div style="padding-left:5px;">
+                        <span
+                            title="Expand/Collapse Group"
+                            (click)="toggleExpandGroup(group)">
+                            <b>{{group.value[0].date | date:'EEEE, MMMM d, 20yy'}}</b>
+                        </span>
+                        </div>
+                    </ng-template>
+                </ngx-datatable-group-header>
+                <!-- Row Column Template -->
+                <ngx-datatable-column name="{{'time' | translate}}" prop="time" editable="false" [flexGrow]="2">
+                    <ng-template ngx-datatable-cell-template let-rowIndex="rowIndex" let-value="value" let-row="row" let-group="group">
+                        <span>
+                            {{row.time | date:'longTime'}}
+                        </span>
+                    </ng-template>
+                </ngx-datatable-column>
+                <ngx-datatable-column name="{{'status' | translate}}" prop="status" [resizeable]="true" [flexGrow]="2">
+                    <ng-template ngx-datatable-cell-template let-rowIndex="rowIndex" let-value="value" let-row="row"  let-group="group">
+                        <span>
+                            {{row.status}} {{row.active ? '(Active)' : ''}}
+                        </span>
+                    </ng-template>
+                </ngx-datatable-column>
+                <ngx-datatable-column name="{{'commitId' | translate}}" prop="commit" [resizeable]="true" [flexGrow]="2">
+                    <ng-template ngx-datatable-cell-template let-rowIndex="rowIndex" let-value="value" let-row="row" let-group="group">
+                        <span>
+                            {{row.commit}}
+                        </span>
+                    </ng-template>
+                </ngx-datatable-column>
+                <ngx-datatable-column name="{{'checkinMessage' | translate}}" prop="checkinMessage" [resizeable]="true" [flexGrow]="5">
+                </ngx-datatable-column>
+                <ngx-datatable-column name="{{'logs' | translate}}" prop="" editable="false"  [resizeable]="true" [flexGrow]="1">
+                    <ng-template ngx-datatable-cell-template let-rowIndex="rowIndex" let-value="value" let-row="row"
+                      let-group="group">
+                          <span [load-image]="'image/logs.svg'" class="command-icon" (click)="details(row)" role="button" (keyup)="onLogsKeyUp($event.target.value, row)"></span>
+                    </ng-template>
+                  </ngx-datatable-column>
+          </ngx-datatable>
+        </div>
+
+    </div>
+
+    <ng-sidebar
+        #sidebar
+        *ngIf="sidePanelOpened"
+        [(opened)]="sidePanelOpened"
+        [mode]="'over'"
+        [position]="'right'"
+        [closeOnClickOutside]="true"
+        [trapFocus]="false"
+        [autoFocus]="true"
+        [sidebarClass]="'sidebar'"
+        [ariaLabel]="'deploymentDetails' | translate"
+        [animate]="true"
+        [showBackdrop]="true">
+
+        <github-deployment-detail [hidden]="hideCreds" [deploymentObject]="rightPaneItem" (closePanel)="sidebar.close()"></github-deployment-detail>
+        <app-deployment-credentials [hidden]="!hideCreds" [resourceId]="resourceId"></app-deployment-credentials>
+
+    </ng-sidebar>
+</ng-sidebar-container>

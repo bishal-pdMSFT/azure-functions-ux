@@ -16,6 +16,7 @@ import { FunctionAppService } from 'app/shared/services/function-app.service';
 import { NavigableComponent, ExtendedTreeViewInfo } from '../shared/components/navigable-component';
 import { DashboardType } from '../tree-view/models/dashboard-type';
 import { FunctionService } from 'app/shared/services/function.service';
+import { FunctionAppVersion } from 'app/shared/models/constants';
 
 @Component({
   selector: 'function-manage',
@@ -62,9 +63,9 @@ export class FunctionManageComponent extends NavigableComponent {
         this.functionInfo.config.disabled
           ? this._portalService.logAction('function-manage', 'disable')
           : this._portalService.logAction('function-manage', 'enable');
-        return this.runtimeVersion === 'V2'
+        return this.runtimeVersion !== FunctionAppVersion.v1
           ? this._functionAppService.updateDisabledAppSettings(this.context, [this.functionInfo])
-          : this._functionAppService.updateFunction(this.context, this.functionInfo);
+          : this._functionService.updateFunction(this.context.site.id, this.functionInfo);
       })
       .do(null, e => {
         this.functionInfo.config.disabled = !this.functionInfo.config.disabled;
@@ -102,19 +103,14 @@ export class FunctionManageComponent extends NavigableComponent {
         Observable.zip(this._functionAppService.getAppContext(view.siteDescriptor.getTrimmedResourceId()), Observable.of(view))
       )
       .switchMap(tuple =>
-        Observable.zip(
-          this._functionAppService.getRuntimeGeneration(tuple[0]),
-          this._functionService.getFunction(tuple[0].site.id, tuple[1].functionDescriptor.name),
-          Observable.of(tuple[0]),
-          Observable.of(tuple[1])
-        )
+        Observable.zip(Observable.of(tuple[0]), this._functionService.getFunction(tuple[0].site.id, tuple[1].functionDescriptor.name, true))
       )
       .do(tuple => {
+        this.runtimeVersion = tuple[0].urlTemplates.runtimeVersion;
         if (tuple[1].isSuccessful) {
-          this.functionInfo = tuple[1].result.properties;
+          this._setFunctionInfo(tuple[1].result.properties);
         }
-        this.context = tuple[2];
-        this.runtimeVersion = tuple[0];
+        this.context = tuple[0];
         this.isHttpFunction = BindingManager.isHttpFunction(this.functionInfo);
       });
   }
@@ -133,5 +129,12 @@ export class FunctionManageComponent extends NavigableComponent {
         this.clearBusy();
       });
     }
+  }
+
+  private _setFunctionInfo(functionInfo: FunctionInfo) {
+    if (this.runtimeVersion !== FunctionAppVersion.v1) {
+      functionInfo.config.disabled = functionInfo.isDisabled;
+    }
+    this.functionInfo = functionInfo;
   }
 }

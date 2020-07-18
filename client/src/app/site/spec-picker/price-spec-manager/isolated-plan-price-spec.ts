@@ -1,5 +1,5 @@
 import { Injector } from '@angular/core';
-import { Kinds, Links } from './../../../shared/models/constants';
+import { Kinds, Links, Pricing } from './../../../shared/models/constants';
 import { Tier, SkuCode } from './../../../shared/models/serverFarmSku';
 import { PortalResources } from '../../../shared/models/portal-resources';
 import { AseService } from '../../../shared/services/ase.service';
@@ -68,27 +68,38 @@ export abstract class IsolatedPlanPriceSpec extends PriceSpec {
   }
 
   runInitialization(input: PriceSpecInput) {
-    if (NationalCloudEnvironment.isBlackforest() || NationalCloudEnvironment.isMooncake()) {
+    if (NationalCloudEnvironment.isBlackforest()) {
       this.state = 'hidden';
     } else if (input.plan) {
       if (
         !input.plan.properties.hostingEnvironmentProfile ||
-        input.plan.properties.isXenon ||
+        input.plan.properties.hyperV ||
         AppKind.hasAnyKind(input.plan, [Kinds.elastic])
       ) {
         this.state = 'hidden';
       } else {
         return this._aseService.getAse(input.plan.properties.hostingEnvironmentProfile.id).do(r => {
-          // If the call to get the ASE fails (maybe due to RBAC), then we can't confirm ASE v1 or v2
+          // If the call to get the ASE fails (maybe due to RBAC), then we can't confirm ASE v1 or v2 or v3
           // but we'll let them see the isolated card anyway.  The plan update will probably fail in
-          // the back-end if it's ASE v1, but at least we allow real ASE v2 customers who don't have
+          // the back-end if it's ASE v1, but at least we allow real ASE v2/v3 customers who don't have
           // ASE permissions to scale their plan.
-          if (r.isSuccessful && r.result.kind && r.result.kind.toLowerCase().indexOf(Kinds.aseV2.toLowerCase()) === -1) {
+          if (
+            r.isSuccessful &&
+            r.result.kind &&
+            r.result.kind.toLowerCase().indexOf(Kinds.aseV2.toLowerCase()) === -1 &&
+            r.result.kind.toLowerCase().indexOf(Kinds.aseV3.toLowerCase()) === -1
+          ) {
             this.state = 'hidden';
           }
         });
       }
-    } else if (input.specPickerInput.data && (!input.specPickerInput.data.allowAseV2Creation || input.specPickerInput.data.isXenon)) {
+    } else if (
+      input.specPickerInput.data &&
+      (!input.specPickerInput.data.allowAseV2Creation ||
+        input.specPickerInput.data.isXenon ||
+        input.specPickerInput.data.hyperV ||
+        (input.specPickerInput.data.isNewFunctionAppCreate && input.specPickerInput.data.isElastic))
+    ) {
       this.state = 'hidden';
     }
 
@@ -111,7 +122,8 @@ export class IsolatedSmallPlanPriceSpec extends IsolatedPlanPriceSpec {
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: Pricing.hoursInAzureMonth,
         resourceId: null,
       },
     ],
@@ -133,7 +145,8 @@ export class IsolatedMediumPlanPriceSpec extends IsolatedPlanPriceSpec {
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: Pricing.hoursInAzureMonth,
         resourceId: null,
       },
     ],
@@ -155,7 +168,8 @@ export class IsolatedLargePlanPriceSpec extends IsolatedPlanPriceSpec {
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: Pricing.hoursInAzureMonth,
         resourceId: null,
       },
     ],

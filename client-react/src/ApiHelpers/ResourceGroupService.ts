@@ -1,7 +1,7 @@
 import { ResourceGroup } from '../models/resource-group';
-import { ArmObj } from '../models/WebAppModels';
 import MakeArmCall, { MakePagedArmCall } from './ArmHelper';
 import { CommonConstants } from '../utils/CommonConstants';
+import { ArmObj } from '../models/arm-obj';
 
 export default class ResourceGroupService {
   public static fetchResourceGroups = (subscriptionId: string) => {
@@ -10,7 +10,7 @@ export default class ResourceGroupService {
     return MakePagedArmCall<ResourceGroup>({
       resourceId: id,
       commandName: 'FetchResourceGroups',
-      apiVersion: CommonConstants.ApiVersions.websiteApiVersion20181101,
+      apiVersion: CommonConstants.ApiVersions.antaresApiVersion20181101,
     });
   };
 
@@ -29,7 +29,7 @@ export default class ResourceGroupService {
       resourceId: id,
       method: 'PUT',
       commandName: 'UpdateResourceGroup',
-      apiVersion: CommonConstants.ApiVersions.websiteApiVersion20181101,
+      apiVersion: CommonConstants.ApiVersions.antaresApiVersion20181101,
     });
   };
 }

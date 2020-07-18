@@ -101,7 +101,7 @@ export class SwaggerDefinitionComponent extends FunctionAppContextComponent impl
     return this.viewInfoEvents
       .switchMap(viewInfo => {
         return Observable.zip(
-          this._functionAppService.getHostJson(this.context),
+          this._functionAppService.getHostV1Json(this.context),
           this._functionAppService.getRuntimeGeneration(this.context),
           this._functionAppService.getFunctionAppEditMode(this.context),
           (a: HttpResult<Host>, b: string, c: HttpResult<FunctionAppEditMode>) => ({
@@ -227,7 +227,7 @@ export class SwaggerDefinitionComponent extends FunctionAppContextComponent impl
 
   private setSwaggerEndpointState(swaggerEnabled: boolean) {
     return this._functionAppService
-      .getHostJson(this.context)
+      .getHostV1Json(this.context)
       .concatMap(jsonObj => {
         if (jsonObj.isSuccessful) {
           jsonObj.result.swagger = { enabled: swaggerEnabled };
@@ -402,7 +402,7 @@ export class SwaggerDefinitionComponent extends FunctionAppContextComponent impl
 
   private addorUpdateApiDefinitionURL(url: string) {
     return this._cacheService
-      .getArm(`${this.context.site.id}/config/web`, true, ARMApiVersions.websiteApiVersion20181101)
+      .getArm(`${this.context.site.id}/config/web`, true, ARMApiVersions.antaresApiVersion20181101)
       .map(r => r.json())
       .mergeMap(config => {
         let configChange = false;
@@ -435,7 +435,7 @@ export class SwaggerDefinitionComponent extends FunctionAppContextComponent impl
           }
 
           return this._cacheService
-            .putArm(`${this.context.site.id}/config/web`, ARMApiVersions.websiteApiVersion20181101, JSON.stringify(config))
+            .putArm(`${this.context.site.id}/config/web`, ARMApiVersions.antaresApiVersion20181101, JSON.stringify(config))
             .map(r => r.json());
         }
 

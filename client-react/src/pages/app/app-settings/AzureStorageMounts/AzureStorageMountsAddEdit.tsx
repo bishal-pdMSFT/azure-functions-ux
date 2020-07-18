@@ -6,45 +6,71 @@ import { FormAzureStorageMounts } from '../AppSettings.types';
 import { IChoiceGroupOption } from 'office-ui-fabric-react/lib/ChoiceGroup';
 import AzureStorageMountsAddEditBasic from './AzureStorageMountsAddEditBasic';
 import AzureStorageMountsAddEditAdvanced from './AzureStorageMountsAddEditAdvanced';
-import { Formik, FormikProps, Field } from 'formik';
+import { Formik, FormikProps, Field, Form } from 'formik';
 import TextField from '../../../../components/form-controls/TextField';
 import { StorageAccountsContext } from '../Contexts';
-import RadioButtonNoFormik from '../../../../components/form-controls/RadioButtonNoFormik';
+import { addEditFormStyle } from '../../../../components/form-controls/formControl.override.styles';
+import RadioButton from '../../../../components/form-controls/RadioButton';
+import * as Yup from 'yup';
+import { style } from 'typestyle';
 
 export interface AzureStorageMountsAddEditProps {
   updateAzureStorageMount: (item: FormAzureStorageMounts) => any;
   otherAzureStorageMounts: FormAzureStorageMounts[];
   closeBlade: () => void;
   azureStorageMount: FormAzureStorageMounts;
+  // TODO (refortie): Temporary until xenon validation is put in
+  enableValidation: boolean;
 }
 
 export type AzureStorageMountsAddEditPropsCombined = AzureStorageMountsAddEditProps;
 const AzureStorageMountsAddEdit: React.SFC<AzureStorageMountsAddEditPropsCombined> = props => {
-  const { closeBlade, otherAzureStorageMounts, azureStorageMount, updateAzureStorageMount } = props;
+  const { closeBlade, otherAzureStorageMounts, azureStorageMount, updateAzureStorageMount, enableValidation } = props;
   const storageAccounts = useContext(StorageAccountsContext);
-  const [confiurationOption, setConfigurationOption] = useState('basic');
+  const [configurationOption, setConfigurationOption] = useState('basic');
   const { t } = useTranslation();
   const [basicDisabled, setBasicDisabled] = useState(false);
   const [initialName] = useState(azureStorageMount.name);
+  const [initialMountPath] = useState(azureStorageMount.mountPath);
+
+  // eslint-disable-next-line no-useless-escape
+  const mountPathRegex = /^\/[a-zA-Z0-9.\[\]\(\)\-_\/]*$/;
+  const shareNameMaxLength = 64;
+
+  // eslint-disable-next-line no-useless-escape
+  const shareNameRegex = /^[a-zA-Z0-9\[\]\(\)\-_]+$/;
   const cancel = () => {
     closeBlade();
   };
 
-  const validateAppSettingName = (value: string) => {
-    if (initialName && value === initialName) {
-      return '';
-    }
-    if (!value) {
-      return t('required');
-    }
-    return otherAzureStorageMounts.filter(v => v.name.toLowerCase() === value.toLowerCase()).length >= 1
-      ? t('azureStorageMountMustBeUnique')
-      : '';
-  };
-
-  const updateConfigurationOptions = (e: any, configOptions: IChoiceGroupOption) => {
-    setConfigurationOption(configOptions.key);
-  };
+  const validationSchema = Yup.object().shape({
+    name: Yup.string()
+      .required(t('validation_requiredError'))
+      .test('uniqueName', t('azureStorageMountMustBeUnique'), value => {
+        return (
+          !value ||
+          value.toLowerCase() === initialName.toLowerCase() ||
+          !otherAzureStorageMounts.some(storageMount => storageMount.name.toLowerCase() === value.toLowerCase())
+        );
+      }),
+    accountName: Yup.string().required(t('validation_requiredError')),
+    shareName: Yup.string()
+      .required(t('validation_requiredError'))
+      .max(shareNameMaxLength, t('validation_fieldMaxCharacters').format(shareNameMaxLength))
+      .matches(shareNameRegex, t('validation_shareNameAllowedCharacters')),
+    accessKey: Yup.string().required(t('validation_requiredError')),
+    mountPath: Yup.string()
+      .required(t('validation_requiredError'))
+      .matches(mountPathRegex, t('validation_mountNameAllowedCharacters'))
+      .test('cannotMountHomeDirectory', t('validation_mountPathNotHome'), (value: string) => value !== '/home')
+      .test('uniqueMountPath', t('mouthPathMustBeUnique'), value => {
+        return (
+          !value ||
+          value === initialMountPath ||
+          !otherAzureStorageMounts.some(storageMount => storageMount.mountPath.toLowerCase() === value.toLowerCase())
+        );
+      }),
+  });
 
   useEffect(() => {
     if (storageAccounts.value.length === 0) {
@@ -53,17 +79,21 @@ const AzureStorageMountsAddEdit: React.SFC<AzureStorageMountsAddEditPropsCombine
     } else if (azureStorageMount.accountName && !storageAccounts.value.find(x => x.name === azureStorageMount.accountName)) {
       setConfigurationOption('advanced');
     }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
   return (
     <Formik
       initialValues={{ ...azureStorageMount }}
       onSubmit={values => {
         updateAzureStorageMount(values);
       }}
+      validationSchema={enableValidation && validationSchema}
       render={(formProps: FormikProps<FormAzureStorageMounts>) => {
         const actionBarPrimaryButtonProps = {
           id: 'save',
-          title: t('update'),
+          title: t('ok'),
           onClick: formProps.submitForm,
           disable: !formProps.isValid || !formProps.dirty || formProps.isValidating,
         };
@@ -74,8 +104,9 @@ const AzureStorageMountsAddEdit: React.SFC<AzureStorageMountsAddEditPropsCombine
           onClick: cancel,
           disable: false,
         };
+
         return (
-          <form>
+          <Form className={addEditFormStyle}>
             <Field
               name={'name'}
               label={t('_name')}
@@ -83,19 +114,13 @@ const AzureStorageMountsAddEdit: React.SFC<AzureStorageMountsAddEditPropsCombine
               id={`azure-storage-mounts-name`}
               ariaLabel={t('_name')}
               errorMessage={formProps.errors && formProps.errors.name}
-              validate={val => {
-                const error = validateAppSettingName(val);
-                if (error) {
-                  throw error;
-                }
-              }}
               autoFocus
-              {...formProps}
             />
-            <RadioButtonNoFormik
+            <Field
               id="azure-storage-mounts-configuration-options"
-              selectedKey={confiurationOption}
+              selectedKey={configurationOption}
               label={t('configurationOptions')}
+              component={RadioButton}
               options={[
                 {
                   key: 'basic',
@@ -107,17 +132,18 @@ const AzureStorageMountsAddEdit: React.SFC<AzureStorageMountsAddEditPropsCombine
                   text: t('advanced'),
                 },
               ]}
-              onChange={updateConfigurationOptions}
+              onChange={(e: any, configOptions: IChoiceGroupOption) => {
+                setConfigurationOption(configOptions.key);
+              }}
             />
-            {confiurationOption === 'basic' && <AzureStorageMountsAddEditBasic {...props} {...formProps} />}
-            {confiurationOption === 'advanced' && <AzureStorageMountsAddEditAdvanced {...props} {...formProps} />}
+            {configurationOption === 'basic' && <AzureStorageMountsAddEditBasic {...props} {...formProps} />}
+            {configurationOption === 'advanced' && <AzureStorageMountsAddEditAdvanced {...props} {...formProps} />}
             <Field
               name={'mountPath'}
               label={t('mountPath')}
               component={TextField}
               id={`azure-storage-mounts-path`}
               errorMessage={formProps.errors && formProps.errors.mountPath}
-              {...formProps}
             />
             <ActionBar
               id="handler-mappings-edit-footer"
@@ -125,11 +151,16 @@ const AzureStorageMountsAddEdit: React.SFC<AzureStorageMountsAddEditPropsCombine
               secondaryButton={actionBarSecondaryButtonProps}
               validating={formProps.isValidating}
             />
-          </form>
+          </Form>
         );
       }}
     />
   );
 };
+
+export const messageBanner = style({
+  paddingLeft: '5px',
+  marginBottom: '15px',
+});
 
 export default AzureStorageMountsAddEdit;

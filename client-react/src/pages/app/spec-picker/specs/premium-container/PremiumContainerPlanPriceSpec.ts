@@ -1,8 +1,8 @@
-import { CommonConstants } from '../../../../../utils/CommonConstants';
 import { ServerFarmSkuConstants } from '../../../../../utils/scenario-checker/ServerFarmSku';
 import { PriceSpec, PriceSpecInput, SpecColorCodes } from '../PriceSpec';
 import { style } from 'typestyle';
 import i18next from 'i18next';
+import { Links } from '../../../../../utils/FwLinks';
 
 export abstract class PremiumContainerPlanPriceSpec extends PriceSpec {
   constructor(t: i18next.TFunction) {
@@ -41,7 +41,7 @@ export abstract class PremiumContainerPlanPriceSpec extends PriceSpec {
         iconUrl: 'image/app-service-plan.svg',
         title: t('pricing_includedHardware_azureComputeUnits'),
         description: t('pricing_computeDedicatedAcu'),
-        learnMoreUrl: CommonConstants.Links.azureComputeUnitLearnMore,
+        learnMoreUrl: Links.azureComputeUnitLearnMore,
       },
       {
         id: 'memory',
@@ -64,7 +64,10 @@ export abstract class PremiumContainerPlanPriceSpec extends PriceSpec {
 
   public async runInitialization(input: PriceSpecInput): Promise<void> {
     // NOTE(shimedh): Only allow premium containers for xenon.
-    if ((input.specPickerInput.data && input.specPickerInput.data.isXenon) || (input.plan && input.plan.properties.isXenon)) {
+    if (
+      (input.specPickerInput.data && (input.specPickerInput.data.isXenon || input.specPickerInput.data.hyperV)) ||
+      (input.plan && input.plan.properties.hyperV)
+    ) {
       this.state = 'enabled';
     } else {
       this.state = 'hidden';

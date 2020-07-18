@@ -20,6 +20,7 @@ import { ScenarioIds, LogCategories } from './../shared/models/constants';
 import { SiteService } from 'app/shared/services/site.service';
 import { LogService } from './../shared/services/log.service';
 import { errorIds } from '../shared/models/error-ids';
+import { runtimeIsV1 } from 'app/shared/models/functions-version-info';
 
 export class FunctionNode extends TreeNode implements CanBlockNavChange, Disposable, CustomSelection {
   public dashboardType = DashboardType.FunctionDashboard;
@@ -67,8 +68,25 @@ export class FunctionNode extends TreeNode implements CanBlockNavChange, Disposa
       this.showExpandIcon = false;
     }
 
-    if (typeof this.functionInfo.config.disabled === 'string') {
-      const settingName = this.functionInfo.config.disabled;
+    if (runtimeIsV1(this.context.urlTemplates.runtimeVersion)) {
+      if (typeof this.functionInfo.config.disabled === 'string') {
+        const settingName = this.functionInfo.config.disabled;
+        this._siteService.getAppSettings(this.context.site.id).subscribe(r => {
+          if (r.isSuccessful) {
+            const result = r.result.properties[settingName];
+            this.functionInfo.config.disabled = result === '1' || result === 'true';
+          } else {
+            this._logService.error(LogCategories.SideNav, errorIds.failedToGetAppSettings, r.error);
+          }
+        });
+      }
+    } else {
+      let settingName: string;
+      if (typeof this.functionInfo.config.disabled === 'string') {
+        settingName = this.functionInfo.config.disabled;
+      } else {
+        settingName = `AzureWebJobs.${this.functionInfo.name}.Disabled`;
+      }
       this._siteService.getAppSettings(this.context.site.id).subscribe(r => {
         if (r.isSuccessful) {
           const result = r.result.properties[settingName];

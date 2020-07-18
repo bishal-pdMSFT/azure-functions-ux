@@ -22,6 +22,9 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
 
   nav {
     display: flex;
+    @media (max-width: 600px) {
+      display: block;
+    }
   }
 
   .tiers-header {
@@ -59,13 +62,9 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
     height: 83px;
     padding-top: 7px;
 
-    h3 {
+    h4 {
       margin-top: 2px;
       font-weight: bold;
-    }
-
-    h4 {
-      font-size: 12px;
     }
 
     &.selected-spec-group {
@@ -83,6 +82,10 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
 
     &.expanded {
       margin-top: -10px;
+    }
+
+    @media (max-width: 600px) {
+      display: block;
     }
   }
 
@@ -103,8 +106,13 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
     margin: 10px 5px;
     position: relative;
     cursor: pointer;
+    outline: 0 solid $border-selection-color;
 
-    h2 {
+    &:focus {
+      border: 2px dashed white;
+    }
+
+    h5 {
       color: $body-bg-color;
       font-weight: bold;
       position: absolute;
@@ -134,7 +142,7 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
       color: $default-text-color;
       cursor: not-allowed;
 
-      h2 {
+      h5 {
         color: $default-text-color;
       }
     }
@@ -149,6 +157,14 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
 
   .spec-expander {
     text-align: center;
+
+    span:focus {
+      outline: #1f97f2 dashed 1px;
+    }
+
+    a {
+      color: #0078d4;
+    }
   }
 
   .isolated-spec {
@@ -176,6 +192,7 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
     margin: 0;
     display: flex;
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .feature-list {
@@ -183,15 +200,17 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
     max-width: 700px;
     margin-top: 10px;
     width: calc(100% / 2);
+    position: relative;
+    min-width: 400px;
   }
 
   .feature-item {
     position: relative;
     height: 70px;
-    background-color: #e1e1e1;
+    background-color: #eee;
     margin: 5px 0px;
 
-    h4 {
+    h5 {
       font-size: 12px;
       font-weight: bold;
       margin: 0px 0px 2px 0px;
@@ -251,6 +270,7 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
     margin-top: auto;
     margin-bottom: auto;
     top: 10px;
+    display: inline-flex;
 
     button,
     .message-icon,
@@ -265,7 +285,7 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
     }
 
     .message-icon {
-      margin: 0 0 5px 15px;
+      margin: 3px 0 5px 15px;
       height: 24px;
       left: 20px;
     }
@@ -311,5 +331,11 @@ $center-column-max-width: calc(#{$spec-card-max-width}* 4 - 40px);
 
   footer {
     background-color: $body-bg-color-dark;
+  }
+
+  .spec-expander {
+    span:focus {
+      outline: #155f99 dashed 1px;
+    }
   }
 }

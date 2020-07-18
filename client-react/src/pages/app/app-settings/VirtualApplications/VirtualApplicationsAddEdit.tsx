@@ -2,11 +2,12 @@ import { Checkbox } from 'office-ui-fabric-react';
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import ActionBar from '../../../../components/ActionBar';
-import { VirtualApplication } from '../../../../models/WebAppModels';
 import { formElementStyle } from '../AppSettings.styles';
 import { isEqual } from 'lodash-es';
 import StringUtils from '../../../../utils/string';
 import TextFieldNoFormik from '../../../../components/form-controls/TextFieldNoFormik';
+import { VirtualApplication } from '../../../../models/site/config';
+import { addEditFormStyle } from '../../../../components/form-controls/formControl.override.styles';
 
 export interface HandlerMappingAddEditProps {
   updateVirtualApplication: (item: VirtualApplication) => any;
@@ -60,7 +61,10 @@ const VirtualApplicationsAddEdit: React.FC<HandlerMappingAddEditProps> = props =
       setVirtualPathError(validateVirtualPath());
       setPhysicalPathError(validatePhysicalPath());
     }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentVirtualApplication]);
+
   const updatePhysicalPath = (e: any, physicalPath: string) => {
     setCurrentVirtualApplication({
       ...currentVirtualApplication,
@@ -95,7 +99,7 @@ const VirtualApplicationsAddEdit: React.FC<HandlerMappingAddEditProps> = props =
 
   const actionBarPrimaryButtonProps = {
     id: 'save',
-    title: t('update'),
+    title: t('ok'),
     onClick: save,
     disable: !!virtualPathError || !!physicalPathError || !dirty(),
   };
@@ -108,7 +112,7 @@ const VirtualApplicationsAddEdit: React.FC<HandlerMappingAddEditProps> = props =
   };
 
   return (
-    <form>
+    <form className={addEditFormStyle}>
       <TextFieldNoFormik
         label={t('virtualPath')}
         id="va-virtual-path"

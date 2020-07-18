@@ -5,7 +5,7 @@ import { ArmArrayResult, ArmObj } from '../../../shared/models/arm/arm-obj';
 export class DeploymentData {
   site: ArmObj<Site>;
   siteConfig?: ArmObj<SiteConfig>;
-  siteMetadata?: ArmObj<any>;
+  siteMetadata?: ArmObj<{ [key: string]: string }>;
   deployments: ArmArrayResult<Deployment>;
   publishingCredentials?: ArmObj<PublishingCredentials>;
   sourceControls?: ArmObj<SourceControlData>;
@@ -19,6 +19,7 @@ export interface SourceControlData {
   repoUrl: string;
   branch: string;
   isMercurial: boolean;
+  isGitHubAction?: boolean;
 }
 export interface Deployment {
   id: string;
@@ -40,4 +41,12 @@ export interface Deployment {
   url: string;
   log_url: string;
   site_name: string;
+}
+
+export interface CredentialsData {
+  resourceId: string;
+}
+
+export interface GithubActionDashboardData {
+  resourceId: string;
 }

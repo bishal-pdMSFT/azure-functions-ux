@@ -3,28 +3,40 @@ nav {
   display: flex;
 }
 
-.group-tab {
-  background-color: $border-color;
+.group-tab-width-2-tabs {
+  width: calc(100% / 2);
+}
+
+.group-tab-width-3-tabs {
   width: calc(100% / 3);
+  max-width: 400px;
+}
+
+.group-tab {
+  background-color: #bbb;
   text-align: center;
   height: 83px;
   padding-top: 7px;
   box-shadow: $card-box-shadow;
+  outline-offset: -2px;
 
-  h1 {
+  h3 {
     margin-top: 2px;
     font-size: 15px;
     font-weight: bold;
-  }
-
-  h2 {
-    font-size: 12px;
-    line-height: 0px;
+    color: #161514;
   }
 
   &.selected-container {
     background-color: $body-bg-color;
   }
+}
+
+.group-tab-description {
+  font-size: 12px;
+  line-height: 0px;
+  white-space: nowrap;
+  color: #161514;
 }
 
 :host-context(#app-root[theme='dark']) {

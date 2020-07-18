@@ -1,6 +1,6 @@
 import { ArmService } from '../../../../shared/services/arm.service';
 import { ArmObj } from '../../../../shared/models/arm/arm-obj';
-import { TableItem } from '../../../../controls/tbl/tbl.component';
+import { TableItem, GetTableHash } from '../../../../controls/tbl/tbl.component';
 import { CacheService } from '../../../../shared/services/cache.service';
 import { PortalService } from '../../../../shared/services/portal.service';
 import { Observable, Subject } from 'rxjs/Rx';
@@ -18,6 +18,8 @@ import { TranslateService } from '@ngx-translate/core';
 import { PortalResources } from '../../../../shared/models/portal-resources';
 import { dateTimeComparatorReverse } from '../../../../shared/Utilities/comparators';
 import { of } from 'rxjs/observable/of';
+import { DeploymentDashboard } from '../deploymentDashboard';
+import { SiteService } from 'app/shared/services/site.service';
 
 enum DeployStatus {
   Pending,
@@ -44,7 +46,7 @@ class KuduTableItem implements TableItem {
   templateUrl: './kudu-dashboard.component.html',
   styleUrls: ['./kudu-dashboard.component.scss'],
 })
-export class KuduDashboardComponent implements OnChanges, OnDestroy {
+export class KuduDashboardComponent extends DeploymentDashboard implements OnChanges, OnDestroy {
   @Input()
   resourceId: string;
   @ViewChild('myTable')
@@ -68,11 +70,13 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
   constructor(
     private _portalService: PortalService,
     private _cacheService: CacheService,
+    private _siteService: SiteService,
     private _armService: ArmService,
     private _broadcastService: BroadcastService,
     private _logService: LogService,
-    private _translateService: TranslateService
+    translateService: TranslateService
   ) {
+    super(translateService);
     this._busyManager = new BusyStateScopeManager(_broadcastService, SiteTabIds.continuousDeployment);
     this._tableItems = [];
     this.viewInfoStream$ = new Subject<string>();
@@ -80,19 +84,19 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
       .takeUntil(this._ngUnsubscribe$)
       .switchMap(resourceId => {
         return Observable.zip(
-          this._cacheService.getArm(resourceId, this._forceLoad),
-          this._cacheService.getArm(`${resourceId}/config/web`, this._forceLoad, ARMApiVersions.websiteApiVersion20181101),
-          this._cacheService.postArm(`${resourceId}/config/publishingcredentials/list`, this._forceLoad),
-          this._cacheService.getArm(`${resourceId}/sourcecontrols/web`, this._forceLoad),
-          this._cacheService.getArm(`${resourceId}/deployments`, true),
-          this._cacheService.getArm(`/providers/Microsoft.Web/publishingUsers/web`, this._forceLoad),
+          this._siteService.getSite(resourceId, this._forceLoad),
+          this._siteService.getSiteConfig(resourceId, this._forceLoad),
+          this._siteService.getPublishingCredentials(resourceId, this._forceLoad),
+          this._siteService.getSiteSourceControlConfig(resourceId, this._forceLoad),
+          this._siteService.getSiteDeployments(resourceId),
+          this._siteService.getPublishingUser(),
           (site, siteConfig, pubCreds, sourceControl, deployments, publishingUser) => ({
-            site: site.json(),
-            siteConfig: siteConfig.json(),
-            pubCreds: pubCreds.json(),
-            sourceControl: sourceControl.json(),
-            deployments: deployments.json(),
-            publishingUser: publishingUser.json(),
+            site: site.result,
+            siteConfig: siteConfig.result,
+            pubCreds: pubCreds.result,
+            sourceControl: sourceControl.result,
+            deployments: deployments.result,
+            publishingUser: publishingUser.result,
           })
         );
       })
@@ -123,6 +127,7 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
     Observable.timer(5000, 5000)
       .takeUntil(this._ngUnsubscribe$)
       .subscribe(() => {
+        this._deploymentFetchTries++;
         this.viewInfoStream$.next(this.resourceId);
       });
   }
@@ -139,27 +144,7 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
     }
     return true;
   }
-  // https://gist.github.com/hyamamoto/fd435505d29ebfa3d9716fd2be8d42f0
-  private _hashcode(s: string): number {
-    let h = 0;
-    const l = s.length;
-    let i = 0;
 
-    if (l > 0) {
-      while (i < l) {
-        // tslint:disable-next-line:no-bitwise
-        h = ((h << 5) - h + s.charCodeAt(i++)) | 0;
-      }
-    }
-    return h;
-  }
-  private _getTableHash(tb) {
-    let hashNumber = 0;
-    tb.forEach(item => {
-      hashNumber = hashNumber + this._hashcode(JSON.stringify(item));
-    });
-    return hashNumber;
-  }
   private _populateTable() {
     const deployments = this.deploymentObject.deployments.value;
     const tableItems = deployments.map(value => {
@@ -182,7 +167,8 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
       };
       return row;
     });
-    const newHash = this._getTableHash(tableItems);
+
+    const newHash = GetTableHash(tableItems);
     if (this._oldTableHash !== newHash) {
       this._tableItems = tableItems.sort(dateTimeComparatorReverse);
       this._oldTableHash = newHash;
@@ -244,6 +230,10 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
   }
 
   get tableItems() {
+    if (this._deploymentFetchTries > 10) {
+      this.tableMessages.emptyMessage = this._translateService.instant(PortalResources.noDeploymentDataAvailable);
+    }
+
     return this._tableItems || [];
   }
   get gitCloneUri() {
@@ -297,7 +287,7 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
             scmType: 'None',
           },
         },
-        ARMApiVersions.websiteApiVersion20181101
+        ARMApiVersions.antaresApiVersion20181101
       );
       let sourceControlsConfig = of(null);
       if (this.deploymentObject.siteConfig.properties.scmType !== 'LocalGit') {
@@ -390,6 +380,10 @@ export class KuduDashboardComponent implements OnChanges, OnDestroy {
   }
 
   showDeploymentCredentials() {
-    this._broadcastService.broadcastEvent(BroadcastEvent.ReloadDeploymentCenter, 'ftp');
+    this._broadcastService.broadcastEvent(BroadcastEvent.ReloadDeploymentCenter, 'credentials-dashboard');
+  }
+
+  browseToSite() {
+    this._browseToSite(this.deploymentObject);
   }
 }

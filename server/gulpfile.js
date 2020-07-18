@@ -101,6 +101,8 @@ gulp.task('replace-environment-variables', cb => {
       onedriveClientSecret: process.env.onedriveClientSecret || '',
       onedriveClientID: process.env.onedriveClientID || '',
       onedriveRedirectUrl: process.env.onedriveRedirectUrl || '',
+      staticSitesGithubClientId: process.env.staticSitesGithubClientId || '',
+      staticSitesGithubClientSecret: process.env.staticSitesGithubClientSecret || '',
       HashSalt: hashSalt,
       version: getBuildVersion(),
       cacheBreakQuery: newGuid(),
@@ -411,9 +413,9 @@ gulp.task('build-bindings', function(cb) {
 const templateVersionMap = {
   default: '1.0.3.10338',
   '1': '1.0.3.10338',
-  beta: '2.0.10344',
-  '2.0.11961.0': '2.0.0-beta-10224',
-  '2': '2.0.10344',
+  beta: '2.1.0',
+  '2': '2.1.0',
+  '3': '3.1.1',
 };
 /*****
  * Download and unzip nuget packages with templates

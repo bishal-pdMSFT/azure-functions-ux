@@ -1,27 +1,28 @@
-import React, { useContext, useState, useRef, useEffect } from 'react';
+import i18next from 'i18next';
 import {
-  Dropdown as OfficeDropdown,
-  IDropdownProps,
-  IDropdownOption,
   Callout,
+  DefaultButton,
   DirectionalHint,
+  IDropdownOption,
+  IDropdownProps,
+  ILink,
   Link,
   PrimaryButton,
-  DefaultButton,
-  ILink,
 } from 'office-ui-fabric-react';
-import { dropdownStyleOverrides } from '../../../components/form-controls/formControl.override.styles';
-import { ThemeContext } from '../../../ThemeContext';
-import { ResourceGroup } from '../../../models/resource-group';
-import { ArmObj } from '../../../models/WebAppModels';
-import { style } from 'typestyle';
-import { TextField as OfficeTextField } from 'office-ui-fabric-react/lib/TextField';
-import { TextFieldStyles } from '../../../theme/CustomOfficeFabric/AzurePortal/TextField.styles';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import i18next from 'i18next';
+import { style } from 'typestyle';
+import DropdownNoFormik from '../../../components/form-controls/DropDownnoFormik';
+import { dropdownStyleOverrides } from '../../../components/form-controls/formControl.override.styles';
+import { Layout } from '../../../components/form-controls/ReactiveFormControl';
+import TextFieldNoFormik from '../../../components/form-controls/TextFieldNoFormik';
+import { ArmObj } from '../../../models/arm-obj';
+import { ResourceGroup } from '../../../models/resource-group';
+import PortalCommunicator from '../../../portal-communicator';
+import { PortalContext } from '../../../PortalContext';
+import { ThemeContext } from '../../../ThemeContext';
 import { ValidationRegex } from '../../../utils/constants/ValidationRegex';
-import { ThemeExtended } from '../../../theme/SemanticColorsExtended';
-import RbacHelper from '../../../utils/rbac-helper';
+import RbacConstants from '../../../utils/rbac-constants';
 
 export interface CreateOrSelectResourceGroupFormProps {
   onRgChange: (rgInfo: ResourceGroupInfo) => void;
@@ -43,20 +44,9 @@ const calloutContainerStyle = style({
   padding: '20px',
 });
 
-const textFieldStyle = style({
-  marginTop: '20px',
-  marginBottom: '20px',
-});
-
 const primaryButtonStyle = style({
   marginRight: '8px',
 });
-
-const requiredIcon = (theme: ThemeExtended) => {
-  return style({
-    color: theme.palette.red,
-  });
-};
 
 const NEW_RG = '__NewRG__';
 
@@ -78,6 +68,7 @@ export const CreateOrSelectResourceGroup = (props: CreateOrSelectResourceGroupFo
   const [existingRgWritePermissionError, setExistingRgWritePermissionError] = useState('');
   const { t } = useTranslation();
   const createNewLinkElement = useRef<ILink | null>(null);
+  const portalContext = useContext(PortalContext);
 
   const onChangeDropdown = (e: unknown, option: IDropdownOption) => {
     const rgInfo: ResourceGroupInfo = {
@@ -90,7 +81,7 @@ export const CreateOrSelectResourceGroup = (props: CreateOrSelectResourceGroupFo
     onChange(rgInfo);
 
     const rgResourceId = option.data === NEW_RG ? '' : (option.data as ArmObj<any>).id;
-    checkWritePermissionOnRg(rgResourceId, setExistingRgWritePermissionError, onRgValidationError, t);
+    checkWritePermissionOnRg(portalContext, rgResourceId, setExistingRgWritePermissionError, onRgValidationError, t);
   };
 
   const menuButtonElement = useRef<HTMLElement | null>(null);
@@ -137,21 +128,23 @@ export const CreateOrSelectResourceGroup = (props: CreateOrSelectResourceGroupFo
   // Initialize
   useEffect(() => {
     const rgResourceId = isNewResourceGroup ? '' : (existingResourceGroup as ArmObj<ResourceGroup>).id.toLowerCase();
-    checkWritePermissionOnRg(rgResourceId, setExistingRgWritePermissionError, onRgValidationError, t);
+    checkWritePermissionOnRg(portalContext, rgResourceId, setExistingRgWritePermissionError, onRgValidationError, t);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <>
-      <label id="createplan-rgname">
-        <span className={requiredIcon(theme)}>*</span> {t('resourceGroup')}
-      </label>
-      <OfficeDropdown
+      <DropdownNoFormik
+        label={t('resourceGroup')}
+        id="resourceGroup"
+        layout={Layout.Vertical}
         selectedKey={isNewResourceGroup ? newResourceGroupName : (existingResourceGroup as ArmObj<ResourceGroup>).id.toLowerCase()}
         options={options}
         onChange={onChangeDropdown}
-        styles={dropdownStyleOverrides(false, theme, false, '260px')}
-        ariaLabelled-by="createplan-rgname"
+        styles={dropdownStyleOverrides(theme, false, '260px')}
         errorMessage={existingRgWritePermissionError}
+        required={true}
       />
 
       <div ref={menuButton => (menuButtonElement.current = menuButton)}>
@@ -168,19 +161,15 @@ export const CreateOrSelectResourceGroup = (props: CreateOrSelectResourceGroupFo
         directionalHint={DirectionalHint.rightBottomEdge}>
         <section className={calloutContainerStyle}>
           <div>{t('resourceGroupDescription')}</div>
-          <div className={textFieldStyle}>
-            <label id="createorselectrg-rgname">
-              <span className={requiredIcon(theme)}>*</span> {t('_name')}
-            </label>
-            <OfficeTextField
-              styles={TextFieldStyles}
-              value={newRgNameFieldValue}
-              onChange={onRgNameTextChange}
-              placeholder={t('createNew')}
-              errorMessage={newRgNameValidationError}
-              ariaLabelled-by="createorselectrg-rgname"
-            />
-          </div>
+          <TextFieldNoFormik
+            label={t('_name')}
+            id={'createorselectrg-rgname'}
+            layout={Layout.Vertical}
+            value={newRgNameFieldValue}
+            onChange={onRgNameTextChange}
+            errorMessage={newRgNameValidationError}
+            required={true}
+          />
           <div>
             <PrimaryButton
               className={primaryButtonStyle}
@@ -198,6 +187,7 @@ export const CreateOrSelectResourceGroup = (props: CreateOrSelectResourceGroupFo
 };
 
 const checkWritePermissionOnRg = (
+  portalContext: PortalCommunicator,
   rgResourceId: string,
   setExistingRgWritePermissionError: React.Dispatch<React.SetStateAction<string>>,
   onRgValidationError: (error: string) => void,
@@ -209,7 +199,7 @@ const checkWritePermissionOnRg = (
     return;
   }
 
-  return RbacHelper.hasPermission(rgResourceId, [RbacHelper.writeScope]).then(hasPermission => {
+  return portalContext.hasPermission(rgResourceId, [RbacConstants.writeScope]).then(hasPermission => {
     const validationError = hasPermission ? '' : t('changePlanNoWritePermissionRg');
     setExistingRgWritePermissionError(validationError);
     onRgValidationError(validationError);

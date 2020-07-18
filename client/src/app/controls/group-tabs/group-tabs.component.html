@@ -4,7 +4,7 @@
     #groupTabs>
     <div *ngFor="let tabItem of tabs"
         (click)="select(tabItem.id)"
-        class="clickable group-tab"
+        [class]="groupTabClasses"
         [class.selected-container]="tabItem.id === currentTabId"
         [tabindex]="tabItem.id === currentTabId ? 0 : -1"
         (keydown)="onKeyDown($event)"
@@ -15,7 +15,7 @@
         [attr.aria-label]="tabItem.title">
 
         <div [load-image]="tabItem.iconUrl" class="icon-medium"></div>
-        <h1>{{tabItem.title}}</h1>
-        <h2 *ngIf="tabItem.description">{{tabItem.description}}</h2>
+        <h3>{{tabItem.title}}</h3>
+        <div *ngIf="tabItem.description" class="group-tab-description">{{tabItem.description}}</div>
     </div>
 </nav>

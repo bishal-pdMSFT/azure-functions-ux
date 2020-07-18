@@ -1,4 +1,3 @@
-import { AvailableSku, ArmObj, GeoRegion, ArmArray } from '../../../../models/WebAppModels';
 import { CommonConstants } from '../../../../utils/CommonConstants';
 import { ServerFarmSkuConstants } from '../../../../utils/scenario-checker/ServerFarmSku';
 import { AppKind } from '../../../../utils/AppKind';
@@ -7,6 +6,8 @@ import MakeArmCall from '../../../../ApiHelpers/ArmHelper';
 import { ArmProviderInfo } from '../../../../models/HttpResult';
 import { style } from 'typestyle';
 import i18next from 'i18next';
+import { AvailableSku, ArmObj, ArmArray } from '../../../../models/arm-obj';
+import { GeoRegion } from '../../../../models/georegions';
 
 export abstract class FreePlanPriceSpec extends PriceSpec {
   constructor(t: i18next.TFunction) {
@@ -19,13 +20,6 @@ export abstract class FreePlanPriceSpec extends PriceSpec {
     this.featureItems = [];
 
     this.hardwareItems = [
-      {
-        id: 'pricing_includedHardware_azureComputeUnits',
-        iconUrl: 'image/app-service-plan.svg',
-        title: t('pricing_includedHardware_azureComputeUnits'),
-        description: t('pricing_computeDedicatedAcu'),
-        learnMoreUrl: CommonConstants.Links.azureComputeUnitLearnMore,
-      },
       {
         id: 'memory',
         iconUrl: 'image/website-power.svg',
@@ -44,7 +38,8 @@ export abstract class FreePlanPriceSpec extends PriceSpec {
       id: this.skuCode,
       firstParty: [
         {
-          quantity: 744,
+          id: this.skuCode,
+          quantity: CommonConstants.Pricing.hoursInAzureMonth,
         },
       ],
     };
@@ -65,7 +60,7 @@ export abstract class FreePlanPriceSpec extends PriceSpec {
       }
       if (
         input.plan.properties.hostingEnvironmentProfile ||
-        input.plan.properties.isXenon ||
+        input.plan.properties.hyperV ||
         AppKind.hasAnyKind(input.plan, [CommonConstants.Kinds.elastic])
       ) {
         this.state = 'hidden';
@@ -79,7 +74,12 @@ export abstract class FreePlanPriceSpec extends PriceSpec {
       if (isLinux) {
         this.topLevelFeatures.shift();
       }
-      if (input.specPickerInput.data.hostingEnvironmentName || input.specPickerInput.data.isXenon || input.specPickerInput.data.isElastic) {
+      if (
+        input.specPickerInput.data.hostingEnvironmentName ||
+        input.specPickerInput.data.isXenon ||
+        input.specPickerInput.data.hyperV ||
+        (input.specPickerInput.data.isNewFunctionAppCreate && input.specPickerInput.data.isElastic)
+      ) {
         this.state = 'hidden';
       }
 
@@ -125,7 +125,7 @@ export abstract class FreePlanPriceSpec extends PriceSpec {
     const providerLocationsFetch = await MakeArmCall<{ value: ArmProviderInfo }>({
       resourceId,
       commandName: '_getProviderLocations',
-      apiVersion: CommonConstants.ApiVersions.websiteApiVersion20181101,
+      apiVersion: CommonConstants.ApiVersions.antaresApiVersion20181101,
     });
 
     const result = providerLocationsFetch;
@@ -144,7 +144,7 @@ export abstract class FreePlanPriceSpec extends PriceSpec {
     const geoRegionsFetch = await MakeArmCall<ArmArray<GeoRegion>>({
       resourceId: id,
       commandName: '_getProviderLocations',
-      apiVersion: CommonConstants.ApiVersions.websiteApiVersion20181101,
+      apiVersion: CommonConstants.ApiVersions.antaresApiVersion20181101,
       queryString: isLinux ? `sku=${sku}&linuxWorkersEnabled=true` : `sku=${sku}`,
     });
 

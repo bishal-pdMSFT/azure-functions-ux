@@ -3,6 +3,13 @@
 
   <div class="settings-wrapper">
     <div class="setting-wrapper">
+      <div class="setting-label" aria-hidden="true"></div>
+      <div class="setting-control-container">
+        <info-box [infoText]="'githubOrgMessage' | translate" [infoLink]="permissionInfoLink"></info-box>
+      </div>
+    </div>
+
+    <div class="setting-wrapper">
       <label class="setting-label" id="dc-github-org-label">{{ 'organization' | translate }}</label>
       <div class="setting-control-container">
         <ng-select
@@ -58,16 +65,46 @@
           [(ngModel)]="selectedBranch"
           [loading]="branchesLoading"
           formControlName="branch"
+          (change)="BranchChanged($event)"
         >
         </ng-select>
         <div invalidmessage="branch" id="dc-github-branch-error" role="alert"></div>
       </div>
     </div>
+
     <div class="setting-wrapper">
       <div class="setting-label" aria-hidden="true"></div>
       <div class="setting-control-container">
-        <info-box [infoText]="'githubOrgMessage' | translate" [infoLink]="permissionInfoLink"></info-box>
+        <info-box *ngIf="protectedBranchSelected" [infoText] = "'gitHubProtectedBranchSelected' | translate" [infoLink]="protectedBranchSelectedLink"></info-box>
+        <info-box *ngIf="workflowFileExistsWarningMessage" typeClass="warning" [infoText]="workflowFileExistsWarningMessage"></info-box>
       </div>
     </div>
+
+    <div *ngIf="workflowFileExistsWarningMessage" class="setting-wrapper">
+      <label class="setting-label" id="dc-github-workflow-option-label">{{ 'githubActionWorkflowOption' | translate }}</label>
+      <div class="setting-control-container">
+        <ng-select
+          id="configure-github-workflow-option-select"
+          class="custom-select"
+          [items]="WorkflowOptionList"
+          aria-describedby="dc-github-workflow-option-error"
+          aria-labelledby="dc-github-workflow-option-label"
+          bindLabel="displayLabel"
+          bindValue="value"
+          [clearable]="false"
+          [(ngModel)]="selectedWorkflowOption"
+          [loading]="false"
+          formControlName="githubActionWorkflowOption"
+          (change)="WorkflowOptionChanged($event)"
+        >
+        </ng-select>
+        <div invalidmessage="branch" id="dc-github-branch-error" role="alert"></div>
+      </div>
   </div>
 </div>
+
+<ng-container *ngIf="!wizard.isFunctionApp && buildProvider === 'github' && showStackSelector">
+  <app-stack-selector></app-stack-selector>
+</ng-container>
+
+

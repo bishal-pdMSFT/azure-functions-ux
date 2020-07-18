@@ -1,7 +1,8 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import * as PropTypes from 'prop-types';
 import React from 'react';
-import { editorStyle } from './monaco-editor.styles';
+import { editorStyle, disabledEditorStyle } from './monaco-editor.styles';
+import { PortalTheme } from '../../models/portal-models';
 
 class MonacoEditor extends React.Component<any, any> {
   public static propTypes: any;
@@ -39,6 +40,16 @@ class MonacoEditor extends React.Component<any, any> {
     }
     if (prevProps.theme !== this.props.theme) {
       monaco.editor.setTheme(this.props.theme);
+    }
+
+    if (this.editor.updateOptions) {
+      this.editor.updateOptions({ ...this.props.options });
+    }
+
+    if (this.props.onSave && this.editor.addCommand) {
+      this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KEY_S, () => {
+        this.props.onSave();
+      });
     }
 
     this.editor.layout();
@@ -83,6 +94,14 @@ class MonacoEditor extends React.Component<any, any> {
       if (theme) {
         monaco.editor.setTheme(theme);
       }
+      if (options && options.hideReadOnlyTooltip) {
+        this.editor.onKeyDown(e => {
+          if (!!e) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        });
+      }
       // After initializing monaco editor
       this.editorDidMount(this.editor);
     }
@@ -99,13 +118,18 @@ class MonacoEditor extends React.Component<any, any> {
   };
 
   public render() {
-    return <div ref={this.assignRef} className={editorStyle} />;
+    const { height } = this.props;
+    return <div ref={this.assignRef} className={`${editorStyle(height)} ${this.props.disabled ? disabledEditorStyle : ''}`} />;
   }
 
   public updateDimensions() {
     this.editor.layout();
   }
 }
+
+export const getMonacoEditorTheme = (portalTheme: PortalTheme) => {
+  return `vs-${portalTheme}`;
+};
 
 MonacoEditor.propTypes = {
   value: PropTypes.string,
@@ -116,6 +140,8 @@ MonacoEditor.propTypes = {
   editorDidMount: PropTypes.func,
   editorWillMount: PropTypes.func,
   onChange: PropTypes.func,
+  disabled: PropTypes.bool,
+  height: PropTypes.string,
 };
 const noop = () => {
   return;
@@ -129,6 +155,8 @@ MonacoEditor.defaultProps = {
   editorDidMount: noop,
   editorWillMount: noop,
   onChange: noop,
+  disabled: false,
+  height: 'calc(100vh - 100px)',
 };
 
 export default MonacoEditor;

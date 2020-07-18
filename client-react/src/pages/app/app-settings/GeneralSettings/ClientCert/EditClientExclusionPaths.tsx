@@ -24,7 +24,9 @@ const EditClientExclusionPaths: React.FC<Props> = props => {
       lastFieldRef.focus();
       setFocusLast(false);
     }
-  });
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusLast]);
 
   const removeItem = (index: number) => {
     setValues(values.filter((v, i) => i !== index));
@@ -42,7 +44,7 @@ const EditClientExclusionPaths: React.FC<Props> = props => {
 
   const actionBarPrimaryButtonProps = {
     id: 'save',
-    title: t('update'),
+    title: t('ok'),
     onClick: () => {
       save(values.join(';'));
     },

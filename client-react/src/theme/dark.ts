@@ -1,21 +1,25 @@
+import { IPalette } from 'office-ui-fabric-react/lib/Styling';
 import { ThemeExtended } from './SemanticColorsExtended';
+import { AzurePortalColors as LightThemePortalColors } from './light';
 
 const AzurePortalColors = {
-  lineSeperator: 'rgba(107, 132, 156, 0.25)',
+  lineSeparator: 'rgba(107, 132, 156, 0.25)',
   sectionDividerScrollbar: 'rgba(107, 132, 156, 0.35)',
   background: '#111111',
   sectionBackground: 'rgba(107, 132, 156, 0.06)',
   itemBackgroundOnSelect: 'rgba(128, 128, 128, 0.25)',
   itemBackgroundOnHover: 'rgba(128, 128, 128, 0.15)',
   overlay: 'rgba(0, 0, 0, 0.6)',
+  successText: LightThemePortalColors.successText, // No official dark color yet
   successBackground: '#1a3300',
   successIcon: '#5db300',
+  errorText: LightThemePortalColors.errorText, // No official dark color yet
   errorBackground: '#61050c',
   errorIcon: '#e00b1c',
   warningBackground: '#b36200',
   warningIcon: '#ff8c00',
   infoBackground: '#012b65',
-  infoIcon: '#015cda',
+  infoIcon: '#bbb',
   monochromaticIcon: '#bbb',
   textColor: '#ffffff',
   placeholderText: '#afafaf',
@@ -23,6 +27,7 @@ const AzurePortalColors = {
   disabledText: 'rgba(128, 128, 128, 0.7)',
   disabledControlBackground: 'rgba(128, 128, 128, 0.1)',
   hyperlinkText: '#4894fe',
+  hyperlinkHoverText: '#6dbaf5',
   inlineSuccessText: '#5db300',
   inlineErrorText: '#f63747',
   buttonRest: '#4894fe',
@@ -37,8 +42,11 @@ const AzurePortalColors = {
   standardControlOutlineAccent: '#4894fe',
   controlErrorStateOutline: '#f63747',
   controlDirtyOutline: '#c87fdc',
+  cardBorderColor: '#b2b2b2',
+  cardBackgroundColor: '#2b2b2b',
 };
-const themePalette = {
+
+const themePalette: IPalette = {
   themePrimary: '#4894fe',
   themeLighterAlt: '#03070a',
   themeLighter: '#0a1a27',
@@ -65,6 +73,7 @@ const themePalette = {
   neutralSecondaryAlt: 'rgb(54, 54, 54)',
   accent: '#0078d4',
   whiteTranslucent40: 'rgba(255,255,255,.4)',
+  yellowDark: '#d29200',
   yellow: '#ffb900',
   yellowLight: '#fff100',
   orange: '#d83b01',
@@ -110,13 +119,14 @@ const semanticColors = {
   variantBorderHovered: AzurePortalColors.standardControlOutlineHover,
   defaultStateBackground: AzurePortalColors.standardControlOutlineDisabled,
 
-  errorText: AzurePortalColors.inlineErrorText,
+  successText: AzurePortalColors.successText,
+  successBackground: AzurePortalColors.successBackground,
   warningText: AzurePortalColors.textColor,
-  errorBackground: AzurePortalColors.errorBackground,
-  blockingBackground: AzurePortalColors.errorBackground,
   warningBackground: AzurePortalColors.warningBackground,
   warningHighlight: AzurePortalColors.warningIcon,
-  successBackground: AzurePortalColors.successBackground,
+  errorText: AzurePortalColors.inlineErrorText,
+  errorBackground: AzurePortalColors.errorBackground,
+  blockingBackground: AzurePortalColors.errorBackground,
 
   inputBorder: AzurePortalColors.textControlOutlineRest,
   inputBorderHovered: AzurePortalColors.textControlOutlineHovered,
@@ -135,6 +145,8 @@ const semanticColors = {
   buttonBackgroundPressed: AzurePortalColors.buttonPressed,
   buttonBackgroundDisabled: AzurePortalColors.buttonDisabled,
   buttonBorder: AzurePortalColors.buttonRest,
+  buttonBorderFocused: AzurePortalColors.buttonRest,
+  buttonOutlineFocused: themePalette.blueLight,
   buttonText: AzurePortalColors.buttonRest,
   buttonTextHovered: AzurePortalColors.background,
   buttonTextChecked: AzurePortalColors.background,
@@ -148,6 +160,7 @@ const semanticColors = {
   primaryButtonBackgroundPressed: AzurePortalColors.buttonPressed,
   primaryButtonBackgroundDisabled: AzurePortalColors.buttonDisabled,
   primaryButtonBorder: 'transparent',
+  primaryButtonBorderFocused: AzurePortalColors.background,
 
   primaryButtonText: AzurePortalColors.background,
   primaryButtonTextHovered: AzurePortalColors.background,
@@ -188,7 +201,7 @@ const semanticColors = {
   ...AzurePortalColors,
 };
 
-const darkModeTheme: Partial<ThemeExtended> = {
+export const darkTheme: Partial<ThemeExtended> = {
   palette: themePalette,
   fonts: {
     tiny: {
@@ -254,7 +267,23 @@ const darkModeTheme: Partial<ThemeExtended> = {
       fontSize: '21px',
       fontWeight: 100,
     },
+    xLargePlus: {
+      fontFamily:
+        "'Segoe UI', 'Segoe UI Web (West European)', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif",
+      MozOsxFontSmoothing: 'grayscale',
+      WebkitFontSmoothing: 'antialiased',
+      fontSize: '21px',
+      fontWeight: 100,
+    },
     xxLarge: {
+      fontFamily:
+        "'Segoe UI', 'Segoe UI Web (West European)', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif",
+      MozOsxFontSmoothing: 'grayscale',
+      WebkitFontSmoothing: 'antialiased',
+      fontSize: '28px',
+      fontWeight: 100,
+    },
+    xxLargePlus: {
       fontFamily:
         "'Segoe UI', 'Segoe UI Web (West European)', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', sans-serif",
       MozOsxFontSmoothing: 'grayscale',
@@ -284,5 +313,3 @@ const darkModeTheme: Partial<ThemeExtended> = {
   isInverted: false,
   disableGlobalClassNames: false,
 };
-
-export default darkModeTheme;

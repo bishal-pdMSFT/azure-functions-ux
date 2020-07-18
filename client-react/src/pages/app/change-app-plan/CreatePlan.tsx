@@ -1,19 +1,23 @@
-import { NewPlanInfo } from './CreateOrSelectPlan';
-import { ArmObj, ServerFarm, HostingEnvironment } from '../../../models/WebAppModels';
-import { IDropdownOption, Panel, PrimaryButton, DefaultButton, PanelType, Link, MessageBar, MessageBarType } from 'office-ui-fabric-react';
-import { ResourceGroupInfo, CreateOrSelectResourceGroup } from './CreateOrSelectResourceGroup';
-import { TextField as OfficeTextField } from 'office-ui-fabric-react/lib/TextField';
-import React, { useRef, useEffect, useState } from 'react';
+import i18next from 'i18next';
+import { DefaultButton, IDropdownOption, Link, MessageBar, MessageBarType, Panel, PanelType, PrimaryButton } from 'office-ui-fabric-react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Subject } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
-import { getServerFarmValidator } from '../../../utils/formValidation/serverFarmValidator';
+import { Layout } from '../../../components/form-controls/ReactiveFormControl';
+import TextFieldNoFormik from '../../../components/form-controls/TextFieldNoFormik';
+import { ArmObj } from '../../../models/arm-obj';
+import { HostingEnvironment } from '../../../models/hostingEnvironment/hosting-environment';
+import { ServerFarm } from '../../../models/serverFarm/serverfarm';
+import PortalCommunicator from '../../../portal-communicator';
+import { PortalContext } from '../../../PortalContext';
 import { TextFieldStyles } from '../../../theme/CustomOfficeFabric/AzurePortal/TextField.styles';
-import { style } from 'typestyle';
-import { useTranslation } from 'react-i18next';
-import i18next from 'i18next';
 import { AppKind } from '../../../utils/AppKind';
 import { CommonConstants } from '../../../utils/CommonConstants';
-import RbacHelper from '../../../utils/rbac-helper';
+import RbacConstants from '../../../utils/rbac-constants';
+import { getServerFarmValidator } from '../../../utils/validation/serverFarmValidator';
+import { NewPlanInfo } from './CreateOrSelectPlan';
+import { CreateOrSelectResourceGroup, ResourceGroupInfo } from './CreateOrSelectResourceGroup';
 
 export interface CreatePlanProps {
   newPlanInfo: NewPlanInfo;
@@ -23,10 +27,6 @@ export interface CreatePlanProps {
   hostingEnvironment?: ArmObj<HostingEnvironment>;
   onCreatePanelClose: (newPlanInfo: NewPlanInfo) => void;
 }
-
-const fieldStyle = style({
-  marginTop: '20px',
-});
 
 export const CreatePlan = (props: CreatePlanProps) => {
   const { resourceGroupOptions, serverFarmsInWebspace, subscriptionId, onCreatePanelClose, hostingEnvironment } = props;
@@ -41,15 +41,19 @@ export const CreatePlan = (props: CreatePlanProps) => {
 
   const newPlanInfo$ = useRef(new Subject<NewPlanInfo>());
   const { t } = useTranslation();
+  const portalContext = useContext(PortalContext);
 
   // Initialization
   useEffect(() => {
     watchForPlanUpdates(subscriptionId, newPlanInfo$.current, setNewPlanInfo, serverFarmsInWebspace, setNewPlanNameValidationError, t);
-    checkIfHasSubscriptionWriteAccess(`/subscriptions/${subscriptionId}`, setHasSubscriptionWritePermission);
+    checkIfHasSubscriptionWriteAccess(portalContext, `/subscriptions/${subscriptionId}`, setHasSubscriptionWritePermission);
 
+    const newPlanInfoCurrent = newPlanInfo$.current;
     return () => {
-      newPlanInfo$.current.unsubscribe();
+      newPlanInfoCurrent.unsubscribe();
     };
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onChangePlanName = (e: any, value: string) => {
@@ -64,7 +68,7 @@ export const CreatePlan = (props: CreatePlanProps) => {
     newPlanInfo$.current.next(info);
   };
 
-  const onRenderFooterContent = (t: i18next.TFunction) => {
+  const onRenderFooterContent = (_t: i18next.TFunction) => {
     return (
       <div>
         <PrimaryButton
@@ -101,17 +105,17 @@ export const CreatePlan = (props: CreatePlanProps) => {
           onRgValidationError={e => onRgValidationError(e, setHasResourceGroupWritePermission)}
         />
 
-        <div className={fieldStyle}>
-          <label id="createplan-planname">* {t('_name')}</label>
-          <OfficeTextField
-            styles={TextFieldStyles}
-            value={newPlanInfo.name}
-            onChange={onChangePlanName}
-            errorMessage={newPlanNameValidationError}
-            placeholder={t('planName')}
-            ariaLabelled-by="createplan-planname"
-          />
-        </div>
+        <TextFieldNoFormik
+          label={t('_name')}
+          id="createplan-planname"
+          layout={Layout.Vertical}
+          styles={TextFieldStyles}
+          value={newPlanInfo.name}
+          onChange={onChangePlanName}
+          errorMessage={newPlanNameValidationError}
+          placeholder={t('planName')}
+          required={true}
+        />
       </Panel>
     </>
   );
@@ -122,10 +126,11 @@ const onRgValidationError = (error: string, setHasResourceGroupWritePermission: 
 };
 
 const checkIfHasSubscriptionWriteAccess = async (
+  portalContext: PortalCommunicator,
   resourceId: string,
   hasSubscriptionWritePermission: React.Dispatch<React.SetStateAction<boolean>>
 ) => {
-  const hasPermission = await RbacHelper.hasPermission(resourceId, [RbacHelper.writeScope]);
+  const hasPermission = await portalContext.hasPermission(resourceId, [RbacConstants.writeScope]);
   hasSubscriptionWritePermission(hasPermission);
 };
 
@@ -177,7 +182,7 @@ const watchForPlanUpdates = (
 
     const rgName = info.isNewResourceGroup ? info.newResourceGroupName : (info.existingResourceGroup as ArmObj<any>).name;
 
-    const validate = getServerFarmValidator(subscriptionId, rgName);
+    const validate = getServerFarmValidator(subscriptionId, rgName, t);
     validate(info.name)
       .then(_ => {
         const duplicate = serverFarmsInWebspace.find(s => s.name.toLowerCase() === info.name.toLowerCase());

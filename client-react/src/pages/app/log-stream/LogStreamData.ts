@@ -1,7 +1,7 @@
-import { SiteLogsConfig } from './../../../models/WebAppModels';
 import { LogEntry, newLine, LogLevel, LogRegex, maxLogEntries, LogsEnabled, LogType } from './LogStream.types';
-import { Site } from '../../../models/WebAppModels';
 import { TextUtilitiesService } from '../../../utils/textUtilities';
+import { Site } from '../../../models/site/site';
+import { SiteLogsConfig } from '../../../models/site/logs-config';
 
 export function processLogs(logStream: string, oldLogs: LogEntry[]): LogEntry[] {
   let updatedLogs = oldLogs;
@@ -78,8 +78,11 @@ export function processLogConfig(site: Site, logsConfig: SiteLogsConfig): LogsEn
   let appLogs = false;
   let webLogs = false;
 
-  if (site.kind.includes('linux')) {
-    appLogs = logsConfig.httpLogs.fileSystem.enabled;
+  if (site.reserved) {
+    appLogs = true;
+  } else if (site.hyperV) {
+    appLogs = true;
+    webLogs = logsConfig.httpLogs.fileSystem.enabled;
   } else {
     appLogs = logsConfig.applicationLogs.fileSystem.level.toUpperCase() !== 'OFF';
     webLogs = logsConfig.httpLogs.fileSystem.enabled;

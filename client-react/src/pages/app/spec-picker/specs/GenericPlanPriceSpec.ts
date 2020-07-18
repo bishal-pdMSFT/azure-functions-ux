@@ -1,7 +1,7 @@
 import { PriceSpec, PriceSpecInput } from './PriceSpec';
 import { PricingTier } from '../../../../models/pricingtier';
-import { ComputeMode } from '../../../../models/WebAppModels';
 import i18next from 'i18next';
+import { ComputeMode } from '../../../../models/site/compute-mode';
 
 export abstract class GenericPlanPriceSpec extends PriceSpec {
   private static readonly colorToCssSpec = {
@@ -22,7 +22,9 @@ export abstract class GenericPlanPriceSpec extends PriceSpec {
     if (pricingTier.estimatedPrice === 0) {
       this.priceString = t('free');
     } else if (pricingTier.estimatedPrice > 0) {
-      this.priceString = t('pricing_pricePerMonth').format(pricingTier.estimatedPrice, pricingTier.currencyCode);
+      this.priceString = this.priceIsBaseline
+        ? t('pricing_pricePerMonthBaseline').format(pricingTier.estimatedPrice, pricingTier.currencyCode)
+        : t('pricing_pricePerMonth').format(pricingTier.estimatedPrice, pricingTier.currencyCode);
     } else {
       this.priceString = ' ';
     }

@@ -1,4 +1,14 @@
+import { ArmObj } from '../models/arm-obj';
+import { Site, HostType } from '../models/site/site';
+import { KeyValue } from '../models/portal-models';
+
 export default class Url {
+  public static serviceHost =
+    window.location.hostname === 'localhost' ||
+    (window.appsvc && (window.appsvc.env.runtimeType === 'Standalone' || window.appsvc.env.runtimeType === 'OnPrem'))
+      ? `https://${window.location.hostname}:${window.location.port}/`
+      : `https://${window.location.hostname}/`;
+
   public static appendQueryString(url: string, queryString: string): string {
     if (!queryString) {
       return url;
@@ -10,15 +20,23 @@ export default class Url {
     return `${url}?${queryString}`;
   }
 
+  public static getFeatureValue(featureName: string) {
+    return Url.getParameterByName(null, `appsvc.${featureName}`);
+  }
+
   public static getParameterByName(url: string | null, name: string) {
     let urlFull = url;
     if (urlFull === null) {
       urlFull = window.location.href;
     }
 
+    if (!name) {
+      return null;
+    }
+
+    // eslint-disable-next-line no-useless-escape
     const sanatizedName = name.replace(/[\[\]]/g, '\\$&');
-    // tslint:disable-next-line:prefer-template
-    const regex = new RegExp('[?&]' + sanatizedName + '(=([^&#]*)|&|#|$)', 'i');
+    const regex = new RegExp(`[?&]${sanatizedName}(=([^&#]*)|&|#|$)`, 'i');
     const results = regex.exec(urlFull);
 
     if (!results) {
@@ -76,5 +94,25 @@ export default class Url {
     return `${l.pathname}${l.search}`;
   }
 
-  private static queryStrings: { [key: string]: string };
+  public static getMainUrl(site: ArmObj<Site>) {
+    if (window.appsvc && window.appsvc.env.runtimeType.toLowerCase() === 'standalone' && !!site) {
+      return `https://${site.properties.defaultHostName}/functions/${site.name}`;
+    }
+    return `https://${site.properties.defaultHostName}`;
+  }
+
+  public static getScmUrl(site: ArmObj<Site>) {
+    if (window.appsvc && window.appsvc.env.runtimeType.toLowerCase() === 'standalone') {
+      return this.getMainUrl(site);
+    }
+
+    const scmHost = site.properties.hostNameSslStates && site.properties.hostNameSslStates.find(s => s.hostType === HostType.Repository);
+    return scmHost ? `https://${scmHost.name}` : this.getMainUrl(site);
+  }
+
+  public static getSyncTriggerUrl(site: ArmObj<Site>) {
+    return `${this.getScmUrl(site)}/api/functions/synctriggers`;
+  }
+
+  private static queryStrings: KeyValue<string>;
 }

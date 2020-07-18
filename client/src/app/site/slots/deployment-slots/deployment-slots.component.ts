@@ -6,24 +6,16 @@ import { CustomFormControl } from '../../../controls/click-to-edit/click-to-edit
 import { ArmSiteDescriptor } from '../../../shared/resourceDescriptors';
 import { FeatureComponent } from '../../../shared/components/feature-component';
 import { BroadcastEvent, EventMessage } from '../../../shared/models/broadcast-event';
-import {
-  Links,
-  LogCategories,
-  ScenarioIds,
-  SiteTabIds,
-  SlotOperationState,
-  SwapOperationType,
-  ARMApiVersions,
-} from '../../../shared/models/constants';
-import { OpenBladeInfo, EventVerbs } from '../../../shared/models/portal';
+import { Links, LogCategories, ScenarioIds, SiteTabIds, SlotOperationState, SwapOperationType } from '../../../shared/models/constants';
+import { HttpResult } from '../../../shared/models/http-result';
+import { OpenBladeInfo, EventVerbs, FrameBladeParams } from '../../../shared/models/portal';
 import { PortalResources } from '../../../shared/models/portal-resources';
 import { SlotSwapInfo, SlotNewInfo } from '../../../shared/models/slot-events';
-import { ArmObj, ResourceId } from '../../../shared/models/arm/arm-obj';
+import { ArmObj, ResourceId, ArmArrayResult } from '../../../shared/models/arm/arm-obj';
 import { RoutingRule } from '../../../shared/models/arm/routing-rule';
 import { Site } from '../../../shared/models/arm/site';
 import { SiteConfig } from '../../../shared/models/arm/site-config';
 import { AuthzService } from '../../../shared/services/authz.service';
-import { CacheService } from '../../../shared/services/cache.service';
 import { LogService } from '../../../shared/services/log.service';
 import { PortalService } from '../../../shared/services/portal.service';
 import { SiteService } from '../../../shared/services/site.service';
@@ -31,6 +23,7 @@ import { ScenarioService } from '../../../shared/services/scenario/scenario.serv
 import { DecimalRangeValidator } from '../../../shared/validators/decimalRangeValidator';
 import { RoutingSumValidator } from '../../../shared/validators/routingSumValidator';
 import { TreeViewInfo, SiteData } from '../../../tree-view/models/tree-view-info';
+import { ScenarioCheckResult } from 'app/shared/services/scenario/scenario.models';
 
 @Component({
   selector: 'deployment-slots',
@@ -43,6 +36,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
   public viewInfo: TreeViewInfo<SiteData>;
   public resourceId: ResourceId;
   public isSlot: boolean;
+  public tipSupported: boolean;
 
   public addSlotCommandDisabled = true;
   public swapSlotsCommandDisabled = true;
@@ -50,7 +44,8 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
   public refreshCommandDisabled = true;
   public navigationDisabled = false;
 
-  public loadingFailed: boolean;
+  public loadingSlotsFailureMessage: string;
+  public loadingConfigFailureMessage: string;
   public fetchingContent: boolean;
   public fetchingPermissions: boolean;
   public keepVisible: boolean;
@@ -72,10 +67,14 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
   public dirtyMessage: string;
 
   public siteArm: ArmObj<Site>;
-  public relativeSlotsArm: ArmObj<Site>[];
+
+  public prodSiteName: string;
+  public prodSiteArm: ArmObj<Site>;
+  public prodSiteConfigArm: ArmObj<SiteConfig>;
+  public deploymentSlotsArm: ArmObj<Site>[];
   public saving: boolean;
 
-  private _siteConfigArm: ArmObj<SiteConfig>;
+  private _siteLevelResourceId: ResourceId;
 
   private _slotName: string;
 
@@ -91,7 +90,6 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
 
   constructor(
     private _authZService: AuthzService,
-    private _cacheService: CacheService,
     private _fb: FormBuilder,
     private _logService: LogService,
     private _portalService: PortalService,
@@ -122,7 +120,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
     this.setBusy();
 
     this._portalService
-      .openBlade(
+      .openFrameBlade(
         {
           detailBlade: 'SpecPickerFrameBlade',
           detailBladeInputs: {
@@ -154,7 +152,8 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
       .switchMap(viewInfo => {
         this.viewInfo = viewInfo;
 
-        this.loadingFailed = false;
+        this.loadingSlotsFailureMessage = '';
+        this.loadingConfigFailureMessage = '';
         this.fetchingContent = true;
         this.fetchingPermissions = true;
 
@@ -167,60 +166,38 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
         this.slotsQuotaMessage = null;
 
         this.siteArm = null;
-        this.relativeSlotsArm = null;
+
+        this.prodSiteArm = null;
+        this.prodSiteConfigArm = null;
+        this.deploymentSlotsArm = null;
         this.saving = false;
-        this._siteConfigArm = null;
+
+        this.tipSupported = false;
 
         this._updateDisabledState();
 
         const siteDescriptor = new ArmSiteDescriptor(this.viewInfo.resourceId);
+
+        this.prodSiteName = siteDescriptor.site;
 
         this.isSlot = !!siteDescriptor.slot;
         this._slotName = siteDescriptor.slot || 'production';
 
         this.resourceId = siteDescriptor.getTrimmedResourceId().toLowerCase();
 
-        const siteResourceId = siteDescriptor.getSiteOnlyResourceId().toLowerCase();
+        this._siteLevelResourceId = siteDescriptor.getSiteOnlyResourceId().toLowerCase();
 
         return Observable.zip(
-          this._siteService.getSite(siteResourceId, this._refreshing),
-          this._siteService.getSlots(siteResourceId, this._refreshing),
-          this._siteService.getSiteConfig(this.resourceId, this._refreshing)
+          this._siteService.getSite(this._siteLevelResourceId, this._refreshing),
+          this._siteService.getSlots(this._siteLevelResourceId, this._refreshing),
+          this._siteService.getSiteConfig(this._siteLevelResourceId, this._refreshing)
         );
       })
       .switchMap(r => {
         const [siteResult, slotsResult, siteConfigResult] = r;
 
-        let success = true;
+        this._checkLoadingFailures(siteResult, slotsResult, siteConfigResult);
 
-        // TODO (andimarc): If only siteConfigResult fails, don't fail entire UI, just disable controls for routing rules
-        if (!siteResult.isSuccessful) {
-          this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', siteResult.error.result);
-          success = false;
-        }
-        if (!slotsResult.isSuccessful) {
-          this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', slotsResult.error.result);
-          success = false;
-        }
-        if (!siteConfigResult.isSuccessful) {
-          this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', siteConfigResult.error.result);
-          success = false;
-        }
-
-        if (success) {
-          this._siteConfigArm = siteConfigResult.result;
-
-          if (this.isSlot) {
-            this.siteArm = slotsResult.result.value.filter(s => s.id.toLowerCase() === this.resourceId.toLowerCase())[0];
-            this.relativeSlotsArm = slotsResult.result.value.filter(s => s.id.toLowerCase() !== this.resourceId.toLowerCase());
-            this.relativeSlotsArm.unshift(siteResult.result);
-          } else {
-            this.siteArm = siteResult.result;
-            this.relativeSlotsArm = slotsResult.result.value;
-          }
-        }
-
-        this.loadingFailed = !success;
         this.fetchingContent = false;
         this.keepVisible = false;
 
@@ -228,31 +205,43 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
 
         this.clearBusyEarly();
 
-        if (success) {
-          return Observable.zip(
-            this._authZService.hasPermission(this.resourceId, [AuthzService.writeScope]),
-            this._authZService.hasPermission(this.resourceId, [AuthzService.actionScope]),
-            this._authZService.hasReadOnlyLock(this.resourceId),
-            this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, { site: siteResult.result })
-          );
-        } else {
-          return Observable.zip(Observable.of(false), Observable.of(false), Observable.of(true), Observable.of(null));
-        }
+        const scenarioInput = this._getScenarioCheckInput();
+
+        const slotLimitsPromise = !!scenarioInput
+          ? this._scenarioService.checkScenarioAsync(ScenarioIds.getSiteSlotLimits, scenarioInput)
+          : Observable.of(null as ScenarioCheckResult);
+
+        return Observable.zip(
+          this._authZService.hasPermission(this.resourceId, [AuthzService.writeScope]),
+          this._authZService.hasPermission(this.resourceId, [
+            AuthzService.slotswapScope,
+            AuthzService.applySlotConfigScope,
+            AuthzService.resetSlotConfigScope,
+          ]),
+          this._authZService.hasReadOnlyLock(this.resourceId),
+          slotLimitsPromise
+        );
       })
       .do(r => {
         const [hasWritePermission, hasSwapPermission, hasReadOnlyLock, slotsQuotaCheck] = r;
+
         const slotsQuota = !!slotsQuotaCheck ? slotsQuotaCheck.data : 0;
 
-        this.canScaleUp =
-          this.siteArm && this._scenarioService.checkScenario(ScenarioIds.canScaleForSlots, { site: this.siteArm }).status !== 'disabled';
+        const scenarioInput = this._getScenarioCheckInput();
+
+        const tipSupportedCheck = !!scenarioInput && this._scenarioService.checkScenario(ScenarioIds.tipSupported, scenarioInput);
+        this.tipSupported = !tipSupportedCheck || tipSupportedCheck.status !== 'disabled';
+
+        const canScaleForSlotsCheck = !!scenarioInput && this._scenarioService.checkScenario(ScenarioIds.canScaleForSlots, scenarioInput);
+        this.canScaleUp = !canScaleForSlotsCheck || canScaleForSlotsCheck.status !== 'disabled';
 
         this.hasWriteAccess = hasWritePermission && !hasReadOnlyLock;
 
-        this.hasSwapAccess = this.hasWriteAccess && hasSwapPermission;
+        this.hasSwapAccess = hasSwapPermission && !hasReadOnlyLock;
 
         this.featureSupported = slotsQuota === -1 || slotsQuota >= 1;
 
-        if (this.featureSupported && this.relativeSlotsArm && this.relativeSlotsArm.length + 1 >= slotsQuota) {
+        if (this.featureSupported && this.deploymentSlotsArm && this.deploymentSlotsArm.length + 1 >= slotsQuota) {
           let quotaMessage = this._translateService.instant(PortalResources.slotNew_quotaReached, { quota: slotsQuota });
           if (this.canScaleUp) {
             quotaMessage = quotaMessage + ' ' + this._translateService.instant(PortalResources.slotNew_quotaUpgrade);
@@ -266,6 +255,49 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
 
         this._updateDisabledState();
       });
+  }
+
+  private _getScenarioCheckInput() {
+    const site = this.prodSiteArm || (this.deploymentSlotsArm && this.deploymentSlotsArm[0]);
+    return site && { site };
+  }
+
+  private _checkLoadingFailures(
+    siteResult: HttpResult<ArmObj<Site>>,
+    slotsResult: HttpResult<ArmArrayResult<Site>>,
+    siteConfigResult: HttpResult<ArmObj<SiteConfig>>
+  ) {
+    if (siteResult.isSuccessful) {
+      this.prodSiteArm = siteResult.result;
+      if (!this.isSlot) {
+        this.siteArm = siteResult.result;
+      }
+    } else {
+      this._logService.error(LogCategories.deploymentSlots, '/get-site', siteResult.error.result);
+    }
+
+    if (slotsResult.isSuccessful) {
+      this.deploymentSlotsArm = slotsResult.result.value;
+      if (this.isSlot) {
+        this.siteArm = slotsResult.result.value.filter(s => s.id.toLowerCase() === this.resourceId.toLowerCase())[0];
+      }
+    } else {
+      this._logService.error(LogCategories.deploymentSlots, '/get-slots', slotsResult.error.result);
+      this.loadingSlotsFailureMessage = this._translateService.instant(PortalResources.error_unableToLoadSlotsList, {
+        errorMessage: (slotsResult.error && slotsResult.error.message) || '',
+      });
+    }
+
+    if (siteConfigResult.isSuccessful) {
+      this.prodSiteConfigArm = siteConfigResult.result;
+    } else {
+      this._logService.error(LogCategories.deploymentSlots, '/get-tip-rules', siteConfigResult.error.result);
+      if (!this.isSlot && this.tipSupported) {
+        this.loadingConfigFailureMessage = this._translateService.instant(PortalResources.error_unableToLoadTipConfig, {
+          errorMessage: (slotsResult.error && slotsResult.error.message) || '',
+        });
+      }
+    }
   }
 
   private _setupBroadcastSubscriptions() {
@@ -316,7 +348,10 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
     this._broadcastService
       .getEvents<EventMessage<SlotNewInfo>>(BroadcastEvent.SlotNew)
       .takeUntil(this.ngUnsubscribe)
-      .filter(m => m.resourceId.toLowerCase() === this.resourceId.toLowerCase())
+      .filter(m => {
+        const resourceId = m.resourceId.toLowerCase();
+        return resourceId === this.resourceId.toLowerCase() || resourceId === this._siteLevelResourceId.toLowerCase();
+      })
       .subscribe(message => {
         const slotNewInfo = message.metadata;
         if (slotNewInfo.state === SlotOperationState.completed) {
@@ -339,7 +374,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
   }
 
   private _setupForm() {
-    if (!!this.siteArm && !!this.relativeSlotsArm && !!this._siteConfigArm) {
+    if (!this.loadingSlotsFailureMessage && !!this.deploymentSlotsArm && !!this.prodSiteConfigArm) {
       this.mainForm = this._fb.group({});
 
       const remainderControl = this._fb.control({ value: '', disabled: false });
@@ -347,7 +382,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
       const routingSumValidator = new RoutingSumValidator(this._fb, this._translateService);
       const rulesGroup = this._fb.group({}, { validator: routingSumValidator.validate.bind(routingSumValidator) });
 
-      this.relativeSlotsArm.forEach(siteArm => {
+      this.deploymentSlotsArm.forEach(siteArm => {
         const ruleControl = this._generateRuleControl(siteArm);
         rulesGroup.addControl(siteArm.name, ruleControl);
       });
@@ -360,6 +395,9 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
 
       setTimeout(_ => {
         remainderControl.disable();
+        if (this.isSlot || !this.tipSupported) {
+          rulesGroup.disable();
+        }
       });
     } else {
       this.mainForm = null;
@@ -371,24 +409,24 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
 
     this.refreshCommandDisabled = operationOpenOrInProgress || !this.featureSupported;
 
-    this.saveAndDiscardCommandsDisabled = this.refreshCommandDisabled || !this.hasWriteAccess;
+    this.saveAndDiscardCommandsDisabled = this.refreshCommandDisabled || !this.hasWriteAccess || !this.prodSiteConfigArm;
     if (this.mainForm && this.mainForm.controls['rulesGroup']) {
-      if (this.saveAndDiscardCommandsDisabled) {
+      if (this.saveAndDiscardCommandsDisabled || this.isSlot || !this.tipSupported) {
         this.mainForm.controls['rulesGroup'].disable();
       } else {
         this.mainForm.controls['rulesGroup'].enable();
       }
     }
 
-    this.addSlotCommandDisabled = this.saveAndDiscardCommandsDisabled || !!this.slotsQuotaMessage;
+    this.addSlotCommandDisabled = this.refreshCommandDisabled || !this.hasWriteAccess || !!this.slotsQuotaMessage;
     this.swapSlotsCommandDisabled =
-      this.saveAndDiscardCommandsDisabled || !this.hasSwapAccess || !this.relativeSlotsArm || !this.relativeSlotsArm.length;
+      this.refreshCommandDisabled || !this.hasSwapAccess || !this.deploymentSlotsArm || !this.deploymentSlotsArm.length;
 
     this.navigationDisabled = this.isSlot || this._addControlsOpen || this._swapControlsOpen;
   }
 
   private _generateRuleControl(siteArm: ArmObj<Site>): FormControl {
-    const rampUpRules = this._siteConfigArm.properties.experiments.rampUpRules;
+    const rampUpRules = this.prodSiteConfigArm.properties.experiments.rampUpRules;
     const ruleName = siteArm.type === 'Microsoft.Web/sites' ? 'production' : this.getSegment(siteArm.name, -1);
     const rule = !rampUpRules ? null : rampUpRules.filter(r => r.name.toLowerCase() === ruleName.toLowerCase())[0];
 
@@ -431,7 +469,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
         .switchMap(s => {
           notificationId = s.id;
 
-          const siteConfigArm: ArmObj<SiteConfig> = JSON.parse(JSON.stringify(this._siteConfigArm));
+          const siteConfigArm: ArmObj<SiteConfig> = JSON.parse(JSON.stringify(this.prodSiteConfigArm));
           const rampUpRules = siteConfigArm.properties.experiments.rampUpRules as RoutingRule[];
 
           const rulesGroup: FormGroup = this.mainForm.controls['rulesGroup'] as FormGroup;
@@ -461,7 +499,7 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
                   if (index >= 0) {
                     rampUpRules[index].reroutePercentage = value;
                   } else {
-                    const slotArm = this.relativeSlotsArm.find(s => s.name.toLowerCase() === name.toLowerCase());
+                    const slotArm = this.deploymentSlotsArm.find(s => s.name.toLowerCase() === name.toLowerCase());
 
                     if (slotArm) {
                       rampUpRules.push({
@@ -484,30 +522,29 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
           if (siteConfigArm.properties && siteConfigArm.properties.azureStorageAccounts) {
             delete siteConfigArm.properties.azureStorageAccounts;
           }
-
-          return this._cacheService.putArm(`${this.resourceId}/config/web`, ARMApiVersions.websiteApiVersion20181101, siteConfigArm);
-        })
-        .do(null, error => {
-          this.dirtyMessage = null;
-          this._logService.error(LogCategories.deploymentSlots, '/deployment-slots', error);
-          this.saving = false;
-          this.clearBusy();
-          this._portalService.stopNotification(
-            notificationId,
-            false,
-            this._translateService.instant(PortalResources.configUpdateFailure) + JSON.stringify(error)
-          );
-          this._updateDisabledState();
+          return this._siteService.updateSiteConfig(this.resourceId, siteConfigArm);
         })
         .subscribe(r => {
-          this.dirtyMessage = null;
-          this.saving = false;
-          this.clearBusy();
-          this._portalService.stopNotification(notificationId, true, this._translateService.instant(PortalResources.configUpdateSuccess));
-
-          this._siteConfigArm = r.json();
-          this._updateDisabledState();
-          this._setupForm();
+          if (r.isSuccessful) {
+            this.dirtyMessage = null;
+            this.saving = false;
+            this.clearBusy();
+            this._portalService.stopNotification(notificationId, true, this._translateService.instant(PortalResources.configUpdateSuccess));
+            this.prodSiteConfigArm = r.result.json();
+            this._updateDisabledState();
+            this._setupForm();
+          } else {
+            this.dirtyMessage = null;
+            this._logService.error(LogCategories.deploymentSlots, '/update-tip-rules', r.error);
+            this.saving = false;
+            this.clearBusy();
+            this._portalService.stopNotification(
+              notificationId,
+              false,
+              this._translateService.instant(PortalResources.configUpdateFailure) + JSON.stringify(r.error)
+            );
+            this._updateDisabledState();
+          }
         });
     }
   }
@@ -553,14 +590,14 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
   }
 
   private _openSwapPane() {
-    const bladeInfo: OpenBladeInfo = {
+    const bladeInfo: OpenBladeInfo<FrameBladeParams> = {
       detailBlade: 'SwapSlotsFrameBlade',
-      detailBladeInputs: { id: this.siteArm.id },
+      detailBladeInputs: { id: this.resourceId },
       openAsContextBlade: true,
     };
 
     this._portalService
-      .openBlade(bladeInfo, this.componentName)
+      .openFrameBlade(bladeInfo, this.componentName)
       .mergeMap(bladeResult => {
         return Observable.of({
           success: true,
@@ -594,14 +631,14 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
   }
 
   private _openAddPane() {
-    const bladeInfo: OpenBladeInfo = {
+    const bladeInfo: OpenBladeInfo<FrameBladeParams> = {
       detailBlade: 'AddSlotFrameBlade',
-      detailBladeInputs: { id: this.siteArm.id },
+      detailBladeInputs: { id: this.resourceId },
       openAsContextBlade: true,
     };
 
     this._portalService
-      .openBlade(bladeInfo, this.componentName)
+      .openFrameBlade(bladeInfo, this.componentName)
       .mergeMap(bladeResult => {
         return Observable.of({
           success: true,
@@ -633,6 +670,56 @@ export class DeploymentSlotsComponent extends FeatureComponent<TreeViewInfo<Site
         'deployment-slots'
       );
     }
+  }
+
+  openActivityLog() {
+    const siteDescriptor = new ArmSiteDescriptor(this.resourceId);
+
+    // See https://msazure.visualstudio.com/One/_git/AzureUX-ActivityLog?path=%2Fsrc%2FActivityLogExtension%2FClient%2FEvents%2FModels%2FSharedEventModels.ts&version=GBdev
+    const query = {
+      operationNames: [
+        'Microsoft.Web/sites/applySlotConfig/Action',
+        'Microsoft.Web/sites/resetSlotConfig/Action',
+        'Microsoft.Web/sites/slotsswap/Action',
+        'Microsoft.Web/sites/slots/applySlotConfig/Action',
+        'Microsoft.Web/sites/slots/resetSlotConfig/Action',
+        'Microsoft.Web/sites/slots/slotsswap/Action',
+      ],
+      searchText: '',
+      subscriptions: [siteDescriptor.subscription],
+      managementGroups: [],
+      resourceGroupId: siteDescriptor.resourceGroupId,
+      resourceId: siteDescriptor.resourceId,
+      resourceTypes: [],
+      category: 'all',
+      // Levels
+      //   Critical = 1
+      //   Error = 2
+      //   Warning = 3
+      //   Informational = 4
+      //   Verbose = 5
+      levels: ['1', '2', '3', '4'],
+      // TimeSpan
+      //   LastOneHour = 0
+      //   Last24Hours = 1
+      //   LastWeek = 2
+      //   Custom = 3 (requires startTime and endTime)
+      //   LastSixHours = 4
+      //   LastTwoWeeks = 6
+      //   LastOneMonth = 7
+      timeSpan: '2',
+      top: 100,
+    };
+
+    const bladeInfo: OpenBladeInfo = {
+      detailBlade: 'ActivityLogBlade',
+      detailBladeInputs: { queryInputs: { query } },
+      extension: 'Microsoft_Azure_ActivityLog',
+      openAsContextBlade: false,
+      openAsSubJourney: false,
+    };
+
+    this._portalService.openBlade(bladeInfo, this.componentName).subscribe();
   }
 
   getSegment(path: string, index: number): string {

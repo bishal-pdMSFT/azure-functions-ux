@@ -1,3 +1,4 @@
+import { ScenarioResult } from './../../shared/services/scenario/scenario.models';
 import { SiteService } from '../../shared/services/site.service';
 import { ScenarioService } from './../../shared/services/scenario/scenario.service';
 import { ScenarioIds, SiteTabIds, ARMApiVersions, SupportedFeatures } from './../../shared/models/constants';
@@ -15,11 +16,12 @@ import {
   DisableableBladeFeature,
   DisableableFeature,
   DisableableTabFeature,
+  DisableableFrameBladeFeature,
 } from './../../feature-group/feature-item';
 import { FeatureGroup } from './../../feature-group/feature-group';
 import { AuthzService } from '../../shared/services/authz.service';
 import { PortalService } from '../../shared/services/portal.service';
-import { Site } from '../../shared/models/arm/site';
+import { Site, HostType } from '../../shared/models/arm/site';
 import { ArmObj } from '../../shared/models/arm/arm-obj';
 import { ArmSiteDescriptor } from '../../shared/resourceDescriptors';
 import { Url } from '../../shared/Utilities/url';
@@ -44,6 +46,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
   private _hasSiteWritePermissionStream = new Subject<DisableInfo>();
   private _hasPlanReadPermissionStream = new Subject<DisableInfo>();
   private _hasPlanWritePermissionStream = new Subject<DisableInfo>();
+  private _enableAppServiceEditorStream = new Subject<ScenarioResult>();
 
   @Input()
   set viewInfoInput(viewInfo: TreeViewInfo<SiteData>) {
@@ -85,7 +88,8 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
           this._authZService.hasPermission(site.id, [AuthzService.writeScope]),
           this._authZService.hasPermission(site.properties.serverFarmId, [AuthzService.readScope]),
           this._authZService.hasPermission(site.properties.serverFarmId, [AuthzService.writeScope]),
-          this._authZService.hasReadOnlyLock(site.id)
+          this._authZService.hasReadOnlyLock(site.id),
+          this._scenarioService.checkScenarioAsync(ScenarioIds.enableAppServiceEditor, { site: site })
         );
       })
       .do(r => {
@@ -95,6 +99,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
         const hasPlanReadPermissions = r[1];
         const hasPlanWritePermissions = r[2];
         const hasReadOnlyLock = r[3];
+        this._enableAppServiceEditorStream.next(r[4]);
 
         if (!hasSiteWritePermissions) {
           siteWriteDisabledMessage = this._translateService.instant(PortalResources.featureRequiresWritePermissionOnApp);
@@ -114,7 +119,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
 
         this._hasPlanWritePermissionStream.next({
           enabled: hasPlanWritePermissions,
-          disableMessage: 'This feature requires write permissions on the plan',
+          disableMessage: this._translateService.instant(PortalResources.noPlanWritePermissions),
         });
       });
   }
@@ -159,23 +164,49 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
 
   private _initCol1Groups(site: ArmObj<Site>) {
     const codeDeployFeatures = [];
-    const showDeploymentCenterFlag = Url.getParameterByName(null, 'appsvc.deploymentcenter');
-    const deploymentCenterEnabled = this._scenarioService.checkScenario(ScenarioIds.deploymentCenter, { site }).status !== 'disabled';
-    if (deploymentCenterEnabled || showDeploymentCenterFlag) {
-      const deploymentCenterFeature = new TabFeature(
-        this._translateService.instant(PortalResources.deploymentCenterTitle),
-        this._translateService.instant(PortalResources.continuousDeployment) +
-          ' ' +
-          this._translateService.instant(PortalResources.source) +
-          ' ' +
-          this._translateService.instant(PortalResources.options) +
-          '  github bitbucket dropbox onedrive vsts vso',
-        this._translateService.instant(PortalResources.feature_deploymentSourceInfo),
-        'image/deployment-source.svg',
-        SiteTabIds.continuousDeployment,
-        this._broadcastService
+    const containerSettingsKeywords =
+      this._translateService.instant(PortalResources.containerSettingsTitle) + ' ' + this._translateService.instant(PortalResources.linux);
+
+    if (ArmUtil.isContainerApp(site)) {
+      const containerSettingsFeature = new DisableableFrameBladeFeature(
+        this._translateService.instant(PortalResources.containerSettingsTitle),
+        containerSettingsKeywords,
+        this._translateService.instant(PortalResources.feature_containerSettingsInfo),
+        'image/singlecontainer.svg',
+        {
+          detailBlade: 'ContainerSettingsFrameBlade',
+          detailBladeInputs: {
+            id: site.id,
+            data: {
+              resourceId: site.id,
+              isFunctionApp: true,
+              subscriptionId: this._descriptor.subscription,
+              location: site.location,
+              os: ArmUtil.isLinuxApp(site) ? 'linux' : 'windows',
+              fromMenu: true,
+              containerFormData: null,
+            },
+          },
+        },
+        this._portalService,
+        this._hasSiteWritePermissionStream,
+        this._scenarioService.checkScenario(ScenarioIds.containerSettings, { site: site })
       );
-      codeDeployFeatures.push(deploymentCenterFeature);
+      codeDeployFeatures.push(containerSettingsFeature);
+    } else {
+      const containerSettingsFeature = new DisableableTabFeature(
+        this._translateService.instant(PortalResources.containerSettingsTitle),
+        this._translateService.instant(PortalResources.containerSettingsTitle) +
+          ' ' +
+          this._translateService.instant(PortalResources.linux),
+        this._translateService.instant(PortalResources.feature_containerSettingsInfo),
+        'image/singlecontainer.svg',
+        SiteTabIds.continuousDeployment,
+        this._broadcastService,
+        null,
+        this._scenarioService.checkScenario(ScenarioIds.containerSettings, { site })
+      );
+      codeDeployFeatures.push(containerSettingsFeature);
     }
 
     const developmentToolFeatures = [];
@@ -215,9 +246,16 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
       )
     );
 
-    developmentToolFeatures.push(new OpenKuduFeature(site, this._hasSiteWritePermissionStream, this._translateService));
     developmentToolFeatures.push(
-      new OpenEditorFeature(site, this._hasSiteWritePermissionStream, this._translateService, this._scenarioService)
+      new OpenKuduFeature(
+        site,
+        this._hasSiteWritePermissionStream,
+        this._translateService,
+        this._scenarioService.checkScenario(ScenarioIds.enableKudu, { site: site })
+      )
+    );
+    developmentToolFeatures.push(
+      new OpenEditorFeature(site, this._hasSiteWritePermissionStream, this._translateService, this._enableAppServiceEditorStream)
     );
 
     if (this._scenarioService.checkScenario(ScenarioIds.addResourceExplorer, { site: site }).status !== 'disabled') {
@@ -430,9 +468,9 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
               extension: 'Microsoft_Azure_ManagedServiceIdentity',
               detailBladeInputs: {
                 resourceId: site.id,
-                apiVersion: ARMApiVersions.websiteApiVersion20180201,
+                apiVersion: ARMApiVersions.antaresApiVersion20181101,
                 systemAssignedStatus: 2, // IdentityStatus.Supported
-                userAssignedStatus: 1, // IdentityStatus.Preview
+                userAssignedStatus: 2, // IdentityStatus.Supported
               },
             },
             this._portalService
@@ -475,7 +513,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
         this._scenarioService.checkScenario(ScenarioIds.enableDiagnosticLogs, { site: site })
       ),
 
-      new TabFeature(
+      new DisableableTabFeature(
         this._translateService.instant(PortalResources.feature_logStreamingName),
         this._translateService.instant(PortalResources.feature_logStreamingName) +
           ' ' +
@@ -485,7 +523,9 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
         this._translateService.instant(PortalResources.feature_logStreamingInfo),
         'image/log-stream.svg',
         SiteTabIds.logStream,
-        this._broadcastService
+        this._broadcastService,
+        null,
+        this._scenarioService.checkScenario(ScenarioIds.enableLogStream, { site: site })
       ),
 
       new DisableableBladeFeature(
@@ -510,7 +550,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
         {
           detailBlade: 'MetricsBladeV3',
           detailBladeInputs: {
-            id: site.id,
+            ResourceId: site.id,
           },
           extension: 'Microsoft_Azure_Monitoring',
         },
@@ -563,7 +603,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
         this._broadcastService
       ),
 
-      new BladeFeature(
+      new DisableableBladeFeature(
         'CORS',
         'cors api',
         this._translateService.instant(PortalResources.feature_corsInfo),
@@ -573,7 +613,9 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
           detailBladeInputs: { resourceUri: site.id },
           openAsContextBlade: true,
         },
-        this._portalService
+        this._portalService,
+        null,
+        this._scenarioService.checkScenario(ScenarioIds.enableCORS, { site: site })
       ),
     ];
 
@@ -635,7 +677,8 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
             },
           },
           this._portalService,
-          this._hasPlanReadPermissionStream
+          this._hasPlanReadPermissionStream,
+          this._scenarioService.checkScenario(ScenarioIds.enableQuotas, { site: site })
         )
       );
     }
@@ -662,7 +705,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
     const resourceManagementFeatures = [];
     if (this._scenarioService.checkScenario(ScenarioIds.addDiagnoseAndSolve).status !== 'disabled') {
       resourceManagementFeatures.push(
-        new DisableableBladeFeature(
+        new DisableableFrameBladeFeature(
           this._translateService.instant(PortalResources.feature_diagnoseAndSolveName),
           this._translateService.instant(PortalResources.feature_diagnoseAndSolveName),
           this._translateService.instant(PortalResources.feature_diagnoseAndSolveInfo),
@@ -826,7 +869,7 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
       detailBladeInputs: {
         WebHostingPlanId: site.properties.serverFarmId,
         resourceId: site.properties.serverFarmId,
-        apiVersion: ARMApiVersions.websiteApiVersion,
+        apiVersion: ARMApiVersions.antaresApiVersion20181101,
         options: null,
       },
       extension: 'Microsoft_Azure_Monitoring',
@@ -847,19 +890,25 @@ export class SiteManageComponent extends FeatureComponent<TreeViewInfo<SiteData>
 }
 
 export class OpenKuduFeature extends DisableableFeature {
-  constructor(private _site: ArmObj<Site>, disableInfoStream: Subject<DisableInfo>, _translateService: TranslateService) {
+  constructor(
+    private _site: ArmObj<Site>,
+    disableInfoStream: Subject<DisableInfo>,
+    _translateService: TranslateService,
+    scenarioResult: ScenarioResult
+  ) {
     super(
       _translateService.instant(PortalResources.feature_advancedToolsName),
       _translateService.instant(PortalResources.feature_advancedToolsName) + ' kudu',
       _translateService.instant(PortalResources.feature_advancedToolsInfo),
       'image/advanced-tools.svg',
       null,
-      disableInfoStream
+      disableInfoStream,
+      scenarioResult
     );
   }
 
   click() {
-    const scmHostName = this._site.properties.hostNameSslStates.find(h => h.hostType === 1).name;
+    const scmHostName = this._site.properties.hostNameSslStates.find(h => h.hostType === HostType.Repository).name;
     window.open(`https://${scmHostName}`);
   }
 }
@@ -869,7 +918,7 @@ export class OpenEditorFeature extends DisableableFeature {
     private _site: ArmObj<Site>,
     disabledInfoStream: Subject<DisableInfo>,
     _translateService: TranslateService,
-    scenarioService: ScenarioService
+    enableAppServiceEditorStream: Subject<ScenarioResult>
   ) {
     super(
       _translateService.instant(PortalResources.feature_appServiceEditorName),
@@ -878,12 +927,13 @@ export class OpenEditorFeature extends DisableableFeature {
       'image/appsvc-editor.svg',
       null,
       disabledInfoStream,
-      scenarioService.checkScenario(ScenarioIds.enableAppServiceEditor, { site: _site })
+      null,
+      enableAppServiceEditorStream
     );
   }
 
   click() {
-    const scmHostName = this._site.properties.hostNameSslStates.find(h => h.hostType === 1).name;
+    const scmHostName = this._site.properties.hostNameSslStates.find(h => h.hostType === HostType.Repository).name;
     window.open(`https://${scmHostName}/dev`);
   }
 }

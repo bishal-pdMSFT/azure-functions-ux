@@ -14,6 +14,8 @@ export interface FunctionInfo {
   test_data: string;
   invoke_url_template: string;
   language: string;
+  isDisabled: boolean;
+  test_data_href?: string;
 
   // note (allisonm): These properties are used in embedded scenarios only
   context?: FunctionAppContext;

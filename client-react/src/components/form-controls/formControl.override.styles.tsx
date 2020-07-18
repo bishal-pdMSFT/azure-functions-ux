@@ -1,12 +1,12 @@
 import { DropDownStyles } from '../../theme/CustomOfficeFabric/AzurePortal/Dropdown.styles';
-import { IDropdownStyles, ITextFieldStyles } from 'office-ui-fabric-react';
+import { IDropdownStyles, ITextFieldStyles, ITooltipHostStyles } from 'office-ui-fabric-react';
 import { style } from 'typestyle';
 import { ThemeExtended } from '../../theme/SemanticColorsExtended';
 import { TextFieldStyles } from '../../theme/CustomOfficeFabric/AzurePortal/TextField.styles';
 import { ComboBoxStyles } from '../../theme/CustomOfficeFabric/AzurePortal/ComboBox.styles';
 
 const formDefaultWidth = '275px';
-export const dropdownStyleOverrides = (dirty: boolean, theme: ThemeExtended, fullpage: boolean, widthOverride?: string) => styleProps => {
+export const dropdownStyleOverrides = (theme: ThemeExtended, fullpage: boolean, widthOverride?: string) => styleProps => {
   const baseStyle = DropDownStyles({ ...styleProps, widthOverride });
   return {
     ...baseStyle,
@@ -16,12 +16,7 @@ export const dropdownStyleOverrides = (dirty: boolean, theme: ThemeExtended, ful
         width: widthOverride || formDefaultWidth,
       },
     ],
-    title: [
-      ...baseStyle.title,
-      dirty && {
-        borderColor: theme.semanticColors.controlDirtyOutline,
-      },
-    ],
+    title: [...baseStyle.title],
     errorMessage: [
       ...baseStyle.errorMessage,
       fullpage && {
@@ -34,17 +29,11 @@ export const dropdownStyleOverrides = (dirty: boolean, theme: ThemeExtended, ful
         width: widthOverride || formDefaultWidth,
         maxWidth: widthOverride || baseStyle.dropdown[1].maxWidth,
       },
-      dirty && {
-        selectors: {
-          ['&:focus .ms-Dropdown-title']: [{ borderColor: theme.semanticColors.controlDirtyOutline }],
-          ['&:hover .ms-Dropdown-title']: [{ borderColor: theme.semanticColors.controlDirtyOutline }],
-        },
-      },
     ],
   } as IDropdownStyles;
 };
 
-export const comboboxStyleOverrides = (dirty: boolean, theme: ThemeExtended, fullpage: boolean, widthOverride?: string) => {
+export const comboboxStyleOverrides = (theme: ThemeExtended, fullpage: boolean, widthOverride?: string) => {
   const baseStyle = ComboBoxStyles(theme);
   return {
     ...baseStyle,
@@ -57,35 +46,73 @@ export const comboboxStyleOverrides = (dirty: boolean, theme: ThemeExtended, ful
   } as IDropdownStyles;
 };
 
-export const textFieldStyleOverrides = (dirty: boolean, theme: ThemeExtended, fullpage: boolean, widthOverride?: string) => styleProps => {
+export const textFieldStyleOverrides = (theme: ThemeExtended, fullpage: boolean, widthOverride?: string) => styleProps => {
   const baseStyle = TextFieldStyles(styleProps);
   return {
     ...baseStyle,
     root: {
       width: widthOverride || formDefaultWidth,
     },
+    field: {
+      width: widthOverride || formDefaultWidth,
+    },
+    suffix: {
+      paddingRight: '0px',
+    },
   } as ITextFieldStyles;
 };
+
 export const controlContainerStyle = (upsellIcon: boolean, fullpage: boolean) =>
   style({ marginBottom: '15px', marginLeft: upsellIcon && fullpage ? '-20px' : undefined });
 
 export const upsellIconStyle = style({ marginRight: '6px' });
 
-export const labelStyle = (upsellIcon: boolean, fullpage: boolean) =>
+export const infoMessageStyle = () =>
   style({
-    width: upsellIcon && fullpage ? '220px' : '200px',
+    paddingTop: '10px',
   });
 
-export const infoMessageStyle = (fullpage: boolean) =>
+export const copyButtonStyle = {
+  root: {
+    fontSize: '15px',
+  },
+};
+
+export const learnMoreLinkStyle = style({ minWidth: '70px' });
+
+export const addEditFormStyle = style({ paddingBottom: '60px' });
+
+export const formStackStyle = (upsellIcon: boolean, fullpage: boolean) =>
   style({
-    paddingLeft: fullpage ? '10px' : 0,
-    paddingTop: fullpage ? 0 : '5px',
+    minWidth: upsellIcon && fullpage ? '220px' : '200px',
   });
 
-export const infoIconStyle = (theme: ThemeExtended) =>
+export const formLabelStyle = (upsellIcon: boolean, fullpage: boolean) =>
   style({
-    color: theme.semanticColors.infoIcon,
+    minWidth: upsellIcon && fullpage ? '220px' : '200px',
     paddingRight: '5px',
   });
 
-export const learnMoreLinkStyle = style({ minWidth: '70px' });
+export const detailListHeaderStyle = style({
+  fontWeight: 'bolder',
+  fontSize: '13px',
+});
+
+export const filterTextFieldStyle = { root: { marginTop: '5px', height: '25px', width: '300px' } };
+
+export const tooltipStyle: Partial<ITooltipHostStyles> = { root: { display: 'inline', float: 'left' } };
+
+export const hostStyle = (multiline?: boolean) =>
+  style({
+    overflow: !multiline ? 'hidden' : 'visible',
+    textOverflow: 'ellipsis',
+    whiteSpace: !multiline ? 'nowrap' : 'normal',
+    maxWidth: 250,
+  });
+
+export const stackControlStyle = () =>
+  style({
+    paddingTop: '5px',
+    paddingBottom: '5px',
+    width: '100%',
+  });

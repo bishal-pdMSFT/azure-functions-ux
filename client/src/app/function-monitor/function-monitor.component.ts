@@ -16,6 +16,9 @@ import { TranslateService } from '@ngx-translate/core';
 import { ApplicationInsightsService } from '../shared/services/application-insights.service';
 import { SiteService } from '../shared/services/site.service';
 import { LogService } from '../shared/services/log.service';
+import { ArmObj } from 'app/shared/models/arm/arm-obj';
+import { ApplicationInsight } from 'app/shared/models/application-insights';
+import { PortalService } from 'app/shared/services/portal.service';
 
 @Component({
   selector: ComponentNames.functionMonitor,
@@ -37,6 +40,7 @@ export class FunctionMonitorComponent extends NavigableComponent {
     private _translateService: TranslateService,
     private _applicationInsightsService: ApplicationInsightsService,
     private _logService: LogService,
+    private _portalService: PortalService,
     public globalStateService: GlobalStateService,
     injector: Injector
   ) {
@@ -75,17 +79,22 @@ export class FunctionMonitorComponent extends NavigableComponent {
           Observable.of(tuple[0]),
           Observable.of(tuple[1].functionDescriptor.name),
           this._siteService.getAppSettings(tuple[0].site.id),
-          this._scenarioService.checkScenarioAsync(ScenarioIds.appInsightsConfigurable, { site: tuple[0].site })
+          this._scenarioService.checkScenarioAsync(ScenarioIds.appInsightsConfigurable, { site: tuple[0].site }),
+          this._portalService.getAdToken('applicationinsightapi')
         )
       )
       .map(
-        (tuple): FunctionMonitorInfo => ({
-          functionAppContext: tuple[0],
-          functionAppSettings: tuple[2].result.properties,
-          functionName: tuple[1],
-          appInsightsResourceDescriptor: tuple[3].data,
-          appInsightsFeatureEnabled: tuple[3].status === 'enabled',
-        })
+        (tuple): FunctionMonitorInfo => {
+          console.log(tuple);
+          return {
+            functionAppContext: tuple[0],
+            functionAppSettings: tuple[2].result.properties,
+            functionName: tuple[1],
+            appInsightResourceEnabled: tuple[3].status === 'enabled',
+            appInsightResource: tuple[3].status === 'enabled' ? <ArmObj<ApplicationInsight>>tuple[3].data : null,
+            appInsightToken: tuple[3].status === 'enabled' && tuple[4].result ? tuple[4].result.token : null,
+          };
+        }
       )
       .do(functionMonitorInfo => {
         this.functionMonitorInfo = functionMonitorInfo;
@@ -117,9 +126,7 @@ export class FunctionMonitorComponent extends NavigableComponent {
       this.functionMonitorInfo.functionAppContext.site.id
     );
 
-    const loadClassicView =
-      view === FunctionMonitorComponent.CLASSIC_VIEW &&
-      !this.functionMonitorInfo.functionAppSettings[Constants.instrumentationKeySettingName];
+    const loadClassicView = view === FunctionMonitorComponent.CLASSIC_VIEW && !this._appSettingContainsAppInsightIdentifier();
 
     if (!loadClassicView) {
       this._applicationInsightsService.removeFunctionMonitorClassicViewPreference(this.functionMonitorInfo.functionAppContext.site.id);
@@ -127,11 +134,11 @@ export class FunctionMonitorComponent extends NavigableComponent {
 
     // NOTE(michinoy): Load the classic view if the app insights feature is not enabled on the environment OR
     // the user has selected to switch to classic view and has not setup an instrumentation key.
-    return !this.functionMonitorInfo.appInsightsFeatureEnabled || loadClassicView;
+    return !this.functionMonitorInfo.appInsightResourceEnabled || loadClassicView;
   }
 
   private _shouldLoadApplicationInsightsView(): boolean {
-    return this.functionMonitorInfo.appInsightsResourceDescriptor !== null;
+    return this.functionMonitorInfo.appInsightResource !== null;
   }
 
   private _loadMonitorConfigureView(): string {
@@ -139,10 +146,7 @@ export class FunctionMonitorComponent extends NavigableComponent {
 
     // NOTE(michinoy): Load the if the user has setup an instrumentation key, but the app insights resource was not found
     // in the subscription, present the user with an error message.
-    if (
-      !!this.functionMonitorInfo.functionAppSettings[Constants.instrumentationKeySettingName] &&
-      this.functionMonitorInfo.appInsightsResourceDescriptor === null
-    ) {
+    if (this._appSettingContainsAppInsightIdentifier() && this.functionMonitorInfo.appInsightResource === null) {
       errorEvent = {
         errorId: errorIds.applicationInsightsInstrumentationKeyMismatch,
         message: this._translateService.instant(PortalResources.monitoring_appInsightsIsNotFound),
@@ -162,5 +166,12 @@ export class FunctionMonitorComponent extends NavigableComponent {
     };
 
     return ComponentNames.monitorConfigure;
+  }
+
+  private _appSettingContainsAppInsightIdentifier(): boolean {
+    const instrumentationKeyExists = !!this.functionMonitorInfo.functionAppSettings[Constants.instrumentationKeySettingName];
+    const connectionStringExists = !!this.functionMonitorInfo.functionAppSettings[Constants.connectionStringSettingName];
+
+    return instrumentationKeyExists || connectionStringExists;
   }
 }

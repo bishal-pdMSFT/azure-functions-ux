@@ -1,5 +1,5 @@
 import { Injector } from '@angular/core';
-import { Kinds, Links, FeatureFlags } from './../../../shared/models/constants';
+import { Kinds, Links, Pricing } from './../../../shared/models/constants';
 import { Tier, SkuCode } from './../../../shared/models/serverFarmSku';
 import { PortalResources } from './../../../shared/models/portal-resources';
 import { ServerFarm } from './../../../shared/models/server-farm';
@@ -7,7 +7,6 @@ import { Sku, ArmObj } from '../../../shared/models/arm/arm-obj';
 import { AppKind } from './../../../shared/Utilities/app-kind';
 import { DV2SeriesPriceSpec } from './dV2series-price-spec';
 import { PlanSpecPickerData } from './plan-price-spec-manager';
-import { Url } from 'app/shared/Utilities/url';
 
 export abstract class ElasticPremiumPlanPriceSpec extends DV2SeriesPriceSpec {
   tier = Tier.elasticPremium;
@@ -55,6 +54,7 @@ export abstract class ElasticPremiumPlanPriceSpec extends DV2SeriesPriceSpec {
   ];
 
   cssClass = 'spec premium-spec';
+  priceIsBaseline = true;
 
   constructor(injector: Injector) {
     super(injector, Tier.elasticPremium, PortalResources.pricing_epNotAvailable, Links.elasticPremiumNotAvailableLearnMore);
@@ -65,18 +65,24 @@ export abstract class ElasticPremiumPlanPriceSpec extends DV2SeriesPriceSpec {
   }
 
   protected _shouldHideForNewPlan(data: PlanSpecPickerData): boolean {
-    const allowLinux = Url.getParameterByName(null, FeatureFlags.EnableLinuxElasticPremium) === 'true';
-    return !!data.hostingEnvironmentName || data.isXenon || (data.isLinux && !allowLinux) || !data.isFunctionApp;
+    return (
+      !!data.hostingEnvironmentName ||
+      data.isXenon ||
+      data.hyperV ||
+      !data.isFunctionApp ||
+      (data.isNewFunctionAppCreate && !data.isElastic)
+    );
   }
 
   protected _shouldHideForExistingPlan(plan: ArmObj<ServerFarm>): boolean {
-    return !!plan.properties.hostingEnvironmentProfile || plan.properties.isXenon || !AppKind.hasAnyKind(plan, [Kinds.elastic]);
+    return !!plan.properties.hostingEnvironmentProfile || plan.properties.hyperV || !AppKind.hasAnyKind(plan, [Kinds.elastic]);
   }
 }
 
 export class ElasticPremiumSmallPlanPriceSpec extends ElasticPremiumPlanPriceSpec {
+  private readonly _ep1CpuCore = 1;
+  private readonly _ep1Memory = 3.5;
   skuCode = SkuCode.ElasticPremium.EP1;
-  billingSkuCode = SkuCode.PremiumV2.P1V2;
   legacySkuName = 'small_elastic_premium';
   topLevelFeatures = [
     this._ts.instant(PortalResources.pricing_ACU).format('210'),
@@ -88,13 +94,25 @@ export class ElasticPremiumSmallPlanPriceSpec extends ElasticPremiumPlanPriceSpe
 
   specResourceSet = {
     id: this.skuCode,
-    firstParty: [{ quantity: 744, resourceId: null }],
+    firstParty: [
+      {
+        id: SkuCode.ElasticPremium.EPCPU,
+        quantity: (Pricing.secondsInAzureMonth * this._ep1CpuCore) / 100,
+        resourceId: null,
+      },
+      {
+        id: SkuCode.ElasticPremium.EPMemory,
+        quantity: (Pricing.secondsInAzureMonth * this._ep1Memory) / 100,
+        resourceId: null,
+      },
+    ],
   };
 }
 
 export class ElasticPremiumMediumPlanPriceSpec extends ElasticPremiumPlanPriceSpec {
+  private readonly _ep2CpuCore = 2;
+  private readonly _ep2Memory = 7;
   skuCode = SkuCode.ElasticPremium.EP2;
-  billingSkuCode = SkuCode.PremiumV2.P2V2;
   legacySkuName = 'medium_elastic_premium';
   topLevelFeatures = [
     this._ts.instant(PortalResources.pricing_ACU).format('420'),
@@ -106,13 +124,25 @@ export class ElasticPremiumMediumPlanPriceSpec extends ElasticPremiumPlanPriceSp
 
   specResourceSet = {
     id: this.skuCode,
-    firstParty: [{ quantity: 744, resourceId: null }],
+    firstParty: [
+      {
+        id: SkuCode.ElasticPremium.EPCPU,
+        quantity: (Pricing.secondsInAzureMonth * this._ep2CpuCore) / 100,
+        resourceId: null,
+      },
+      {
+        id: SkuCode.ElasticPremium.EPMemory,
+        quantity: (Pricing.secondsInAzureMonth * this._ep2Memory) / 100,
+        resourceId: null,
+      },
+    ],
   };
 }
 
 export class ElasticPremiumLargePlanPriceSpec extends ElasticPremiumPlanPriceSpec {
+  private readonly _ep3CpuCore = 4;
+  private readonly _ep3Memory = 14;
   skuCode = SkuCode.ElasticPremium.EP3;
-  billingSkuCode = SkuCode.PremiumV2.P3V2;
   legacySkuName = 'large_elastic_premium';
   topLevelFeatures = [
     this._ts.instant(PortalResources.pricing_ACU).format('840'),
@@ -124,6 +154,17 @@ export class ElasticPremiumLargePlanPriceSpec extends ElasticPremiumPlanPriceSpe
 
   specResourceSet = {
     id: this.skuCode,
-    firstParty: [{ quantity: 744, resourceId: null }],
+    firstParty: [
+      {
+        id: SkuCode.ElasticPremium.EPCPU,
+        quantity: (Pricing.secondsInAzureMonth * this._ep3CpuCore) / 100,
+        resourceId: null,
+      },
+      {
+        id: SkuCode.ElasticPremium.EPMemory,
+        quantity: (Pricing.secondsInAzureMonth * this._ep3Memory) / 100,
+        resourceId: null,
+      },
+    ],
   };
 }

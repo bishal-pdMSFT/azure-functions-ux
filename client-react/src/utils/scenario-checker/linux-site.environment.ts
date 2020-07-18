@@ -43,7 +43,9 @@ export class LinuxSiteEnvironment extends Environment {
 
     this.scenarioChecks[ScenarioIds.webSocketsSupported] = {
       id: ScenarioIds.webSocketsSupported,
-      runCheck: () => disabledResult,
+      runCheck: () => {
+        return { status: 'enabled' };
+      },
     };
 
     this.scenarioChecks[ScenarioIds.addSsh] = {
@@ -103,6 +105,13 @@ export class LinuxSiteEnvironment extends Environment {
     this.scenarioChecks[ScenarioIds.addWebServerLogging] = {
       id: ScenarioIds.addWebServerLogging,
       runCheck: () => ({ status: 'disabled' }),
+    };
+
+    this.scenarioChecks[ScenarioIds.skipStackValidation] = {
+      id: ScenarioIds.skipStackValidation,
+      runCheck: () => {
+        return { status: 'disabled' };
+      },
     };
 
     this.scenarioChecks[ScenarioIds.linuxAppStack] = {

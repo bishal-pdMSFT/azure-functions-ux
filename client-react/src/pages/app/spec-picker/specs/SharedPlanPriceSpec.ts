@@ -24,13 +24,6 @@ export abstract class SharedPlanPriceSpec extends PriceSpec {
 
     this.hardwareItems = [
       {
-        id: 'pricing_includedHardware_azureComputeUnits',
-        iconUrl: 'image/app-service-plan.svg',
-        title: t('pricing_includedHardware_azureComputeUnits'),
-        description: t('pricing_computeDedicatedAcu'),
-        learnMoreUrl: CommonConstants.Links.azureComputeUnitLearnMore,
-      },
-      {
         id: 'memory',
         iconUrl: 'image/website-power.svg',
         title: t('memory'),
@@ -48,7 +41,8 @@ export abstract class SharedPlanPriceSpec extends PriceSpec {
       id: this.skuCode,
       firstParty: [
         {
-          quantity: 744,
+          id: this.skuCode,
+          quantity: CommonConstants.Pricing.hoursInAzureMonth,
         },
       ],
     };
@@ -62,7 +56,7 @@ export abstract class SharedPlanPriceSpec extends PriceSpec {
     if (input.plan) {
       if (
         input.plan.properties.hostingEnvironmentProfile ||
-        input.plan.properties.isXenon ||
+        input.plan.properties.hyperV ||
         AppKind.hasAnyKind(input.plan, [CommonConstants.Kinds.linux, CommonConstants.Kinds.elastic])
       ) {
         this.state = 'hidden';
@@ -72,7 +66,8 @@ export abstract class SharedPlanPriceSpec extends PriceSpec {
         input.specPickerInput.data.hostingEnvironmentName ||
         input.specPickerInput.data.isLinux ||
         input.specPickerInput.data.isXenon ||
-        input.specPickerInput.data.isElastic
+        input.specPickerInput.data.hyperV ||
+        (input.specPickerInput.data.isNewFunctionAppCreate && input.specPickerInput.data.isElastic)
       ) {
         this.state = 'hidden';
       }

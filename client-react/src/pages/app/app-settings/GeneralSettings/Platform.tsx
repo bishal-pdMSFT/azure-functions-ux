@@ -13,8 +13,10 @@ import { Links } from '../../../../utils/FwLinks';
 const Platform: React.FC<FormikProps<AppSettingsFormValues>> = props => {
   const site = useContext(SiteContext);
   const { t } = useTranslation();
+  const { values, initialValues } = props;
   const scenarioChecker = new ScenarioService(t);
-  const { app_write, editable } = useContext(PermissionsContext);
+  const { app_write, editable, saving } = useContext(PermissionsContext);
+  const disableAllControls = !app_write || !editable || saving;
   const platformOptionEnable = scenarioChecker.checkScenario(ScenarioIds.enablePlatform64, { site });
   const websocketsEnable = scenarioChecker.checkScenario(ScenarioIds.webSocketsEnabled, { site });
   const alwaysOnEnable = scenarioChecker.checkScenario(ScenarioIds.enableAlwaysOn, { site });
@@ -23,11 +25,12 @@ const Platform: React.FC<FormikProps<AppSettingsFormValues>> = props => {
       {scenarioChecker.checkScenario(ScenarioIds.platform64BitSupported, { site }).status !== 'disabled' && (
         <Field
           name="config.properties.use32BitWorkerProcess"
+          dirty={values.config.properties.use32BitWorkerProcess !== initialValues.config.properties.use32BitWorkerProcess}
           component={Dropdown}
           upsellMessage={platformOptionEnable.status === 'disabled' ? platformOptionEnable.data : ''}
           label={t('platform')}
           id="app-settings-worker-process"
-          disabled={!app_write || !editable || platformOptionEnable.status === 'disabled'}
+          disabled={disableAllControls || platformOptionEnable.status === 'disabled'}
           options={[
             {
               key: true,
@@ -43,10 +46,11 @@ const Platform: React.FC<FormikProps<AppSettingsFormValues>> = props => {
       {scenarioChecker.checkScenario(ScenarioIds.classicPipelineModeSupported, { site }).status !== 'disabled' && (
         <Field
           name="config.properties.managedPipelineMode"
+          dirty={values.config.properties.managedPipelineMode !== initialValues.config.properties.managedPipelineMode}
           component={Dropdown}
           label={t('managedPipelineVersion')}
           id="app-settings-managed-pipeline-mode"
-          disabled={!app_write || !editable}
+          disabled={disableAllControls}
           options={[
             {
               key: 'Integrated',
@@ -59,39 +63,39 @@ const Platform: React.FC<FormikProps<AppSettingsFormValues>> = props => {
           ]}
         />
       )}
-      {scenarioChecker.checkScenario(ScenarioIds.addFTPOptions, { site }).status !== 'disabled' && (
-        <Field
-          name="config.properties.ftpsState"
-          component={Dropdown}
-          infoBubbleMessage={t('ftpsInfoMessage')}
-          learnMoreLink={Links.ftpInfo}
-          label={t('ftpState')}
-          id="app-settings-ftps-state"
-          disabled={!app_write || !editable}
-          options={[
-            {
-              key: 'AllAllowed',
-              text: t('allAllowed'),
-            },
-            {
-              key: 'FtpsOnly',
-              text: t('ftpsOnly'),
-            },
-            {
-              key: 'Disabled',
-              text: t('disabled'),
-            },
-          ]}
-        />
-      )}
+      <Field
+        name="config.properties.ftpsState"
+        dirty={values.config.properties.ftpsState !== initialValues.config.properties.ftpsState}
+        component={Dropdown}
+        infoBubbleMessage={t('ftpsInfoMessage')}
+        learnMoreLink={Links.ftpInfo}
+        label={t('ftpState')}
+        id="app-settings-ftps-state"
+        disabled={disableAllControls}
+        options={[
+          {
+            key: 'AllAllowed',
+            text: t('allAllowed'),
+          },
+          {
+            key: 'FtpsOnly',
+            text: t('ftpsOnly'),
+          },
+          {
+            key: 'Disabled',
+            text: t('disabled'),
+          },
+        ]}
+      />
       {scenarioChecker.checkScenario(ScenarioIds.addHTTPSwitch, { site }).status !== 'disabled' && (
         <Field
           name="config.properties.http20Enabled"
+          dirty={values.config.properties.http20Enabled !== initialValues.config.properties.http20Enabled}
           component={Dropdown}
           fullpage
           label={t('httpVersion')}
           id="app-settings-http-enabled"
-          disabled={!app_write || !editable}
+          disabled={disableAllControls}
           options={[
             {
               key: true,
@@ -107,11 +111,12 @@ const Platform: React.FC<FormikProps<AppSettingsFormValues>> = props => {
       {scenarioChecker.checkScenario(ScenarioIds.webSocketsSupported, { site }).status !== 'disabled' && (
         <Field
           name="config.properties.webSocketsEnabled"
+          dirty={values.config.properties.webSocketsEnabled !== initialValues.config.properties.webSocketsEnabled}
           component={RadioButton}
           upsellMessage={websocketsEnable.status === 'disabled' ? websocketsEnable.data : ''}
           label={t('webSocketsEnabledLabel')}
           id="app-settings-web-sockets-enabled"
-          disabled={!app_write || !editable || websocketsEnable.status === 'disabled'}
+          disabled={disableAllControls || websocketsEnable.status === 'disabled'}
           options={[
             {
               key: true,
@@ -127,13 +132,14 @@ const Platform: React.FC<FormikProps<AppSettingsFormValues>> = props => {
       {scenarioChecker.checkScenario(ScenarioIds.alwaysOnSupported, { site }).status !== 'disabled' && (
         <Field
           name="config.properties.alwaysOn"
+          dirty={values.config.properties.alwaysOn !== initialValues.config.properties.alwaysOn}
           component={RadioButton}
           infoBubbleMessage={t('alwaysOnInfoMessage')}
           learnMoreLink={Links.alwaysOnInfo}
           upsellMessage={alwaysOnEnable.status === 'disabled' ? alwaysOnEnable.data : ''}
           label={t('alwaysOn')}
           id="app-settings-always-on"
-          disabled={!app_write || !editable || alwaysOnEnable.status === 'disabled'}
+          disabled={disableAllControls || alwaysOnEnable.status === 'disabled'}
           options={[
             {
               key: true,
@@ -149,12 +155,13 @@ const Platform: React.FC<FormikProps<AppSettingsFormValues>> = props => {
       {scenarioChecker.checkScenario(ScenarioIds.clientAffinitySupported, { site }).status !== 'disabled' && (
         <Field
           name="site.properties.clientAffinityEnabled"
+          dirty={values.site.properties.clientAffinityEnabled !== initialValues.site.properties.clientAffinityEnabled}
           component={RadioButton}
           infoBubbleMessage={t('arrAffinityInfoMessage')}
           learnMoreLink={Links.clientAffinityInfo}
           label={t('clientAffinityEnabledLabel')}
           id="app-settings-clientAffinityEnabled"
-          disabled={!app_write || !editable}
+          disabled={disableAllControls}
           options={[
             {
               key: true,

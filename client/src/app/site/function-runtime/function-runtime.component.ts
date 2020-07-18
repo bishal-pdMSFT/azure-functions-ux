@@ -1,5 +1,11 @@
-import { NotificationIds, SiteTabIds, Constants, LogCategories } from './../../shared/models/constants';
-import { LogService } from './../../shared/services/log.service';
+import {
+  NotificationIds,
+  SiteTabIds,
+  Constants,
+  FunctionAppRuntimeSetting,
+  Links,
+  FunctionAppVersion,
+} from './../../shared/models/constants';
 import { ScenarioIds } from './../../shared/models/constants';
 import { ScenarioService } from 'app/shared/services/scenario/scenario.service';
 import { BusyStateScopeManager } from './../../busy-state/busy-state-scope-manager';
@@ -62,10 +68,12 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
   public functionRuntimeValueStream: Subject<string>;
   public proxySettingValueStream: Subject<boolean>;
   public functionEditModeValueStream: Subject<boolean>;
+  public functionsRuntimeScaleMonitoringStream: Subject<boolean>;
   public isLinuxApp: boolean;
   public isStopped: boolean;
   public hasFunctions: boolean;
   public badRuntimeVersion: boolean;
+  public isLinuxDynamic: boolean;
 
   private _appNode: AppNode;
 
@@ -73,13 +81,18 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
   public functionAppEditModeOptions: SelectOption<boolean>[];
   public functionAppEditModeForcedWarning: string;
 
-  private _isSlotApp = false;
-  public slotsStatusOptions: SelectOption<boolean>[];
-  public slotsAppSetting: string;
-  public slotsEnabled: boolean;
   public betaDisabled = false;
   public disableRuntimeSelector = false;
-  public slotsValueChange: Subject<boolean>;
+  public disableSomeVersionSwaps = false;
+
+  public runtimeVersionSupportsScaleMonitoring = false;
+  public functionsRuntimeScaleMonitoring = false;
+  public functionsRuntimeScaleMonitoringOptions: SelectOption<Boolean>[];
+  public readonly functionsRuntimeScaleMonitoringLink: string;
+  public reservedInstanceCount = 0;
+  public vnetEnabled = false;
+  public isElasticPremium = false;
+
   private _busyManager: BusyStateScopeManager;
 
   constructor(
@@ -91,7 +104,6 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
     private _translateService: TranslateService,
     private _configService: ConfigService,
     private _functionAppService: FunctionAppService,
-    private _logService: LogService,
     private _scenarioService: ScenarioService,
     private _languageService: LanguageService,
     private _siteService: SiteService,
@@ -125,7 +137,8 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
         value: false,
       },
     ];
-    this.slotsStatusOptions = [
+
+    this.functionsRuntimeScaleMonitoringOptions = [
       {
         displayLabel: this._translateService.instant(PortalResources.off),
         value: false,
@@ -138,12 +151,16 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
 
     this.functionRutimeOptions = [
       {
-        displayLabel: '~1',
-        value: '~1',
+        displayLabel: FunctionAppRuntimeSetting.tilda1,
+        value: FunctionAppRuntimeSetting.tilda1,
       },
       {
-        displayLabel: '~2',
-        value: '~2',
+        displayLabel: FunctionAppRuntimeSetting.tilda2,
+        value: FunctionAppRuntimeSetting.tilda2,
+      },
+      {
+        displayLabel: FunctionAppRuntimeSetting.tilda3,
+        value: FunctionAppRuntimeSetting.tilda3,
       },
     ];
 
@@ -181,7 +198,7 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
           .mergeMap(r => {
             const response: ArmObj<any> = r.json();
             response.properties[Constants.functionAppEditModeSettingName] = appSetting;
-            return this._cacheService.putArm(response.id, this._armService.websiteApiVersion, response);
+            return this._cacheService.putArm(response.id, this._armService.antaresApiVersion20181101, response);
           })
           .catch(() => {
             throw originalState;
@@ -207,32 +224,19 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
         this._busyManager.clearBusy();
       });
 
-    this.slotsValueChange = new Subject<boolean>();
-    this.slotsValueChange
-      .filter(value => value !== this.slotsEnabled)
-      .subscribe((value: boolean) => {
-        this._busyManager.setBusy();
-        const newOrUpdatedSettings = {};
-        newOrUpdatedSettings[Constants.slotsSecretStorageSettingsName] = value
-          ? Constants.slotsSecretStorageSettingsValue
-          : Constants.disabled;
-        this._siteService.addOrUpdateAppSettings(this.context.site.id, newOrUpdatedSettings).subscribe(r => {
-          if (r.isSuccessful) {
-            this._functionAppService.fireSyncTrigger(this.context);
-            this.slotsEnabled = value;
-            this._busyManager.clearBusy();
-            this._cacheService.clearArmIdCachePrefix(this.context.site.id);
-          } else {
-            this._busyManager.clearBusy();
-            this._logService.error(LogCategories.functionAppSettings, '/save-slot-change', r.error);
-          }
-        });
-      });
-
     this.functionRuntimeValueStream = new Subject<string>();
     this.functionRuntimeValueStream.subscribe((value: string) => {
       this.updateVersion(value);
     });
+
+    this.functionsRuntimeScaleMonitoringStream = new Subject<boolean>();
+    this.functionsRuntimeScaleMonitoringStream.subscribe((value: boolean) => {
+      this._updateFunctionRuntimeScaleMonitoring(value);
+    });
+
+    this.functionsRuntimeScaleMonitoringLink = this._translateService
+      .instant(PortalResources.appFunctionSettings_runtimeScalingMonitoredText)
+      .format(Links.runtimeScaleMonitoringLearnMore);
   }
 
   setup(): Subscription {
@@ -242,13 +246,16 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
         this.isStopped =
           this.context.site.properties.state && this.context.site.properties.state.toLocaleLowerCase() !== 'Running'.toLocaleLowerCase();
         this.isLinuxApp = ArmUtil.isLinuxApp(this.context.site);
+        this.isLinuxDynamic = ArmUtil.isLinuxDynamic(this.context.site);
+        this.isElasticPremium = ArmUtil.isElastic(this.context.site);
 
         return Observable.forkJoin(
           this._cacheService.postArm(`${this.viewInfo.resourceId}/config/appsettings/list`, true),
           this._functionAppService.getSlotsList(this.context),
           this._functionAppService.getFunctionAppEditMode(this.context),
           this._functionAppService.getFunctionHostStatus(this.context),
-          this._functionService.getFunctions(this.context.site.id)
+          this._functionService.getFunctions(this.context.site.id),
+          this._siteService.getSiteConfig(this.context.site.id)
         );
       })
       .do(() => this._busyManager.clearBusy())
@@ -258,7 +265,6 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
 
         const appSettings: ArmObj<any> = tuple[0].json();
         this.exactExtensionVersion = tuple[3].isSuccessful ? tuple[3].result.version : '';
-        this._isSlotApp = this._functionAppService.isSlot(this.context);
         this.dailyMemoryTimeQuota = this.context.site.properties.dailyMemoryTimeQuota
           ? this.context.site.properties.dailyMemoryTimeQuota.toString()
           : '0';
@@ -280,11 +286,11 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
           this.extensionVersion = Constants.latest;
         }
 
-        this.disableRuntimeSelector = this.extensionVersion !== Constants.latest && (this.hasFunctions || this.betaDisabled);
+        this._setRuntimeToggle();
 
         this.badRuntimeVersion = !this._validRuntimeVersion();
 
-        this.setNeedUpdateExtensionVersion();
+        this._setNeedUpdateExtensionVersion();
 
         this.showProxyEnable = appSettings.properties[Constants.routingExtensionVersionAppSettingName]
           ? appSettings.properties[Constants.routingExtensionVersionAppSettingName].toLocaleLowerCase() ===
@@ -298,18 +304,17 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
           this.functionAppEditMode = true;
           this.functionAppEditModeForcedWarning = null;
         }
+
+        if (tuple[5].isSuccessful) {
+          const siteConfig = tuple[5].result;
+          this.functionsRuntimeScaleMonitoring = siteConfig.properties.functionsRuntimeScaleMonitoringEnabled;
+          this.reservedInstanceCount = siteConfig.properties.reservedInstanceCount ? siteConfig.properties.reservedInstanceCount : 0;
+          this.vnetEnabled = !!siteConfig.properties.vnetName;
+        }
+
+        this._setRuntimeVersionSupportsScaleMonitoring();
         this._busyManager.clearBusy();
         this._aiService.stopTrace('/timings/site/tab/function-runtime/revealed', this.viewInfo.data.siteTabRevealedTraceKey);
-
-        // settings for enabling slots, display if there are no slots && appSetting property for slot is set
-        this.slotsAppSetting = appSettings.properties[Constants.slotsSecretStorageSettingsName];
-        if (this._isSlotApp) {
-          // Slots Node
-          this.slotsEnabled = true;
-        } else {
-          this.slotsEnabled =
-            (tuple[1].isSuccessful && tuple[1].result.length > 0) || this.slotsAppSetting === Constants.slotsSecretStorageSettingsValue;
-        }
       });
   }
 
@@ -341,7 +346,7 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
     let updateButtonClicked = false;
     if (!version) {
       updateButtonClicked = true;
-      version = this.getLatestVersion(this.extensionVersion);
+      version = this._getLatestVersion(this.extensionVersion);
     }
     this._aiService.trackEvent('/actions/app_settings/update_version');
     this._busyManager.setBusy();
@@ -387,7 +392,8 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
       .subscribe((hostStatus: HostStatus) => {
         this.exactExtensionVersion = hostStatus ? hostStatus.version : '';
         this.extensionVersion = version;
-        this.setNeedUpdateExtensionVersion();
+        this._setNeedUpdateExtensionVersion();
+        this._setRuntimeVersionSupportsScaleMonitoring();
         this._busyManager.clearBusy();
         this._cacheService.clearArmIdCachePrefix(this.context.site.id);
         this._appNode.clearNotification(NotificationIds.newRuntimeVersion);
@@ -426,7 +432,7 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
   }
 
   openAppSettings() {
-    this._portalService.openBlade(
+    this._portalService.openFrameBlade(
       {
         detailBlade: 'SiteConfigSettingsFrameBladeReact',
         detailBladeInputs: {
@@ -448,22 +454,89 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
     }
   }
 
+  private _setRuntimeVersionSupportsScaleMonitoring() {
+    let supported = false;
+
+    const isV3 =
+      this.extensionVersion === FunctionAppRuntimeSetting.tilda3 ||
+      FunctionsVersionInfoHelper.getFunctionGeneration(this.exactExtensionVersion) === FunctionAppVersion.v3;
+    const isV2 =
+      this.extensionVersion === FunctionAppRuntimeSetting.tilda2 ||
+      FunctionsVersionInfoHelper.getFunctionGeneration(this.exactExtensionVersion) === FunctionAppVersion.v2;
+    const isV1 =
+      this.extensionVersion === FunctionAppRuntimeSetting.tilda1 ||
+      FunctionsVersionInfoHelper.getFunctionGeneration(this.exactExtensionVersion) === FunctionAppVersion.v1;
+
+    if (isV3 || isV2) {
+      // supported for any V3 version and some V2 versions
+      supported = true;
+    } else if (isV1) {
+      // not supported for any V1 version
+      supported = false;
+    } else {
+      // can't determine if supported
+      supported = false;
+    }
+
+    this.runtimeVersionSupportsScaleMonitoring = supported;
+  }
+
+  private _updateFunctionRuntimeScaleMonitoring(value: boolean) {
+    if (value === this.functionsRuntimeScaleMonitoring) {
+      return;
+    }
+    this._aiService.trackEvent('/actions/site_config/update_runtime_scale_monitoring');
+    this._busyManager.setBusy();
+    this._siteService
+      .getSiteConfig(this.context.site.id)
+      .mergeMap(r => {
+        if (r.isSuccessful) {
+          r.result.properties.functionsRuntimeScaleMonitoringEnabled = value;
+          return this._siteService.updateSiteConfig(this.context.site.id, r.result).map(siteConfig => {
+            if (siteConfig.isSuccessful) {
+              return siteConfig.result;
+            }
+            throw Observable.throw(siteConfig.error);
+          });
+        } else {
+          throw Observable.throw(r.error);
+        }
+      })
+      .do(null, e => {
+        this._busyManager.clearBusy();
+        this._aiService.trackException(e, '/errors/runtime-scale-monitoring-updated');
+        console.error(e);
+      })
+      .subscribe(result => {
+        const siteConfig = result.json();
+        this.functionsRuntimeScaleMonitoring =
+          siteConfig && siteConfig.properties && siteConfig.properties.functionsRuntimeScaleMonitoringEnabled;
+        this._busyManager.clearBusy();
+      });
+  }
+
   private _updateContainerVersion(appSettings: ArmObj<any>, version: string) {
+    // Remove AZUREJOBS_EXTENSION_VERSION app setting (if present)
     if (appSettings.properties[Constants.azureJobsExtensionVersion]) {
       delete appSettings[Constants.azureJobsExtensionVersion];
     }
 
-    appSettings.properties[Constants.runtimeVersionAppSettingName] = version;
-
+    // If version is V1, remove FUNCTIONS_WORKER_RUNTIME app setting (if present)
     if (version === '~1' && appSettings.properties[Constants.functionsWorkerRuntimeAppSettingsName]) {
       delete appSettings.properties[Constants.functionsWorkerRuntimeAppSettingsName];
     }
 
+    // Add or update WEBSITE_NODE_DEFAULT_VERSION app setting
     if (version === '~2') {
       appSettings.properties[Constants.nodeVersionAppSettingName] = Constants.nodeVersionV2;
+    } else if (version === '~3') {
+      appSettings.properties[Constants.nodeVersionAppSettingName] = Constants.nodeVersionV3;
     } else {
       appSettings.properties[Constants.nodeVersionAppSettingName] = Constants.nodeVersion;
     }
+
+    // Add or update FUNCTIONS_EXTENSION_VERSION app setting
+    appSettings.properties[Constants.runtimeVersionAppSettingName] = version;
 
     return this._siteService.updateAppSettings(this.context.site.id, appSettings);
   }
@@ -473,7 +546,7 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
       delete appSettings.properties[Constants.routingExtensionVersionAppSettingName];
     }
 
-    return this._cacheService.putArm(appSettings.id, this._armService.websiteApiVersion, appSettings);
+    return this._cacheService.putArm(appSettings.id, this._armService.antaresApiVersion20181101, appSettings);
   }
 
   private _updateDailyMemory(site: ArmObj<Site>, value: number) {
@@ -485,29 +558,29 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
       },
     });
 
-    return this._cacheService.putArm(site.id, this._armService.websiteApiVersion, body);
+    return this._cacheService.putArm(site.id, this._armService.antaresApiVersion20181101, body);
   }
 
   private _updateMemorySize(site: ArmObj<Site>, memorySize: string | number) {
     const nMemorySize = typeof memorySize === 'string' ? parseInt(memorySize, 10) : memorySize;
     site.properties.containerSize = nMemorySize;
 
-    return this._cacheService.putArm(site.id, this._armService.websiteApiVersion, site).map(r => <ArmObj<Site>>r.json());
+    return this._cacheService.putArm(site.id, this._armService.antaresApiVersion20181101, site).map(r => <ArmObj<Site>>r.json());
   }
 
   public get GlobalDisabled() {
     return this._globalStateService.GlobalDisabled;
   }
 
-  private setNeedUpdateExtensionVersion() {
+  private _setNeedUpdateExtensionVersion() {
     this.needUpdateExtensionVersion = FunctionsVersionInfoHelper.needToUpdateRuntime(
       this._configService.FunctionsVersionInfo,
       this.extensionVersion
     );
-    this.latestExtensionVersion = this.getLatestVersion(this.extensionVersion);
+    this.latestExtensionVersion = this._getLatestVersion(this.extensionVersion);
   }
 
-  private getLatestVersion(version: string): string {
+  private _getLatestVersion(version: string): string {
     const match = this._configService.FunctionsVersionInfo.runtimeStable.find(v => {
       return this.extensionVersion.toLowerCase() === v;
     });
@@ -515,9 +588,11 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
       return match;
     } else if (!!version) {
       if (version.startsWith('1.')) {
-        return '~1';
+        return FunctionAppRuntimeSetting.tilda1;
       } else if (version.startsWith('2.')) {
-        return '~2';
+        return FunctionAppRuntimeSetting.tilda2;
+      } else if (version.startsWith('3.')) {
+        return FunctionAppRuntimeSetting.tilda3;
       }
     }
     return this._configService.FunctionsVersionInfo.runtimeDefault;
@@ -532,6 +607,22 @@ export class FunctionRuntimeComponent extends FunctionAppContextComponent {
       return !!this._configService.FunctionsVersionInfo.runtimeStable.find(v => {
         return this.extensionVersion.toLowerCase() === v;
       });
+    }
+  }
+
+  private _setRuntimeToggle() {
+    // Never allow Linux Apps to select V1
+    if (this.isLinuxApp) {
+      this.functionRutimeOptions[0].disabled = true;
+    }
+
+    // See if a runtime update should be blocked
+    this.disableRuntimeSelector = this.extensionVersion !== Constants.latest && (this.hasFunctions || this.betaDisabled);
+
+    // Allow a runtime update with a warning only for nonV1 apps
+    if (this.disableRuntimeSelector && this.extensionVersion !== FunctionAppRuntimeSetting.tilda1) {
+      this.functionRutimeOptions[0].disabled = true;
+      this.disableRuntimeSelector = false;
     }
   }
 }

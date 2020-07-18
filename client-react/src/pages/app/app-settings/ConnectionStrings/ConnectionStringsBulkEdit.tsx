@@ -10,19 +10,22 @@ interface ConnectionStringsBulkEditProps {
   updateAppSetting: (item: FormConnectionString[]) => void;
   closeBlade: () => void;
   connectionStrings: FormConnectionString[];
+  disableSlotSetting: boolean;
 }
 const ConnectionStringsBulkEdit: React.FC<ConnectionStringsBulkEditProps> = props => {
   const { t } = useTranslation();
-  const { updateAppSetting, closeBlade, connectionStrings } = props;
+  const { updateAppSetting, closeBlade, connectionStrings, disableSlotSetting } = props;
   const [errorMessage, setErrorMessage] = useState('');
-  const [connectionStringsState, setConnectionStringsState] = useState(formConnectionStringsoUseSlotSetting(connectionStrings));
+  const [connectionStringsState, setConnectionStringsState] = useState(
+    formConnectionStringsoUseSlotSetting(connectionStrings, disableSlotSetting)
+  );
 
   const validate = newValue => {
-    const err = getErrorMessage(newValue, t);
+    const err = getErrorMessage(newValue, disableSlotSetting, t);
     setErrorMessage(err);
   };
   const save = () => {
-    updateAppSetting(formAppSettingToUseStickySetting(connectionStringsState));
+    updateAppSetting(formAppSettingToUseStickySetting(connectionStringsState, disableSlotSetting, connectionStrings));
   };
 
   const cancel = () => {
@@ -31,7 +34,7 @@ const ConnectionStringsBulkEdit: React.FC<ConnectionStringsBulkEditProps> = prop
 
   const actionBarPrimaryButtonProps = {
     id: 'save',
-    title: t('update'),
+    title: t('ok'),
     onClick: save,
     disable: !!errorMessage,
   };
@@ -57,6 +60,7 @@ const ConnectionStringsBulkEdit: React.FC<ConnectionStringsBulkEditProps> = prop
           minimap: { enabled: false },
           scrollBeyondLastLine: false,
         }}
+        height="calc(100vh - 140px)"
       />
       <ActionBar
         id="connection-strings-bulk-edit-footer"

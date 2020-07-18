@@ -6,13 +6,15 @@ import ReactiveFormControl from './ReactiveFormControl';
 
 interface RadioButtonProps {
   id: string;
-  label: string;
+  label?: string;
   subLabel?: string;
   upsellMessage?: string;
+  infoBubbleMessage?: string;
   learnMore?: {
     learnMoreLink: string;
     learnMoreText: string;
   };
+  dirty?: boolean;
 }
 
 const fieldStyle = style({

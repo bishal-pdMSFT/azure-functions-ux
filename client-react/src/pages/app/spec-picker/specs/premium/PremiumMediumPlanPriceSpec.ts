@@ -1,5 +1,6 @@
 import { PremiumPlanPriceSpec } from './PremiumPlanPriceSpec';
 import { ServerFarmSkuConstants } from '../../../../../utils/scenario-checker/ServerFarmSku';
+import { CommonConstants } from '../../../../../utils/CommonConstants';
 import i18next from 'i18next';
 
 export abstract class PremiumMediumPlanPriceSpec extends PremiumPlanPriceSpec {
@@ -13,7 +14,8 @@ export abstract class PremiumMediumPlanPriceSpec extends PremiumPlanPriceSpec {
       id: this.skuCode,
       firstParty: [
         {
-          quantity: 744,
+          id: this.skuCode,
+          quantity: CommonConstants.Pricing.hoursInAzureMonth,
         },
       ],
     };

@@ -1,7 +1,7 @@
 import { PriceSpec, PriceSpecInput } from './price-spec';
 import { Injector } from '@angular/core';
 import { PortalResources } from '../../../shared/models/portal-resources';
-import { Links } from '../../../shared/models/constants';
+import { Links, Pricing } from '../../../shared/models/constants';
 import { Tier, SkuCode } from './../../../shared/models/serverFarmSku';
 
 export abstract class PremiumContainerPlanPriceSpec extends PriceSpec {
@@ -57,7 +57,10 @@ export abstract class PremiumContainerPlanPriceSpec extends PriceSpec {
 
   runInitialization(input: PriceSpecInput) {
     // NOTE(michinoy): Only allow premium containers for xenon.
-    if ((input.specPickerInput.data && input.specPickerInput.data.isXenon) || (input.plan && input.plan.properties.isXenon)) {
+    if (
+      (input.specPickerInput.data && (input.specPickerInput.data.isXenon || input.specPickerInput.data.hyperV)) ||
+      (input.plan && input.plan.properties.hyperV)
+    ) {
       this.state = 'enabled';
     } else {
       this.state = 'hidden';
@@ -82,7 +85,8 @@ export class PremiumContainerSmallPriceSpec extends PremiumContainerPlanPriceSpe
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: Pricing.hoursInAzureMonth,
         resourceId: null,
       },
     ],
@@ -104,7 +108,8 @@ export class PremiumContainerMediumPriceSpec extends PremiumContainerPlanPriceSp
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: Pricing.hoursInAzureMonth,
         resourceId: null,
       },
     ],
@@ -126,7 +131,8 @@ export class PremiumContainerLargePriceSpec extends PremiumContainerPlanPriceSpe
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: Pricing.hoursInAzureMonth,
         resourceId: null,
       },
     ],

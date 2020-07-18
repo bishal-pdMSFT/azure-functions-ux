@@ -20,15 +20,35 @@ export class FunctionService {
   }
 
   getFunctions(resourceId: string): Result<ArmArrayResult<FunctionInfo>> {
-    const getFunctions = this._cacheService.getArm(`${resourceId}/functions`, false).map(r => r.json());
+    const getFunctions = this._cacheService.getArm(`${resourceId}/functions`, false).map(r => {
+      r.json().value.sort((a, b) => a.name.localeCompare(b.name));
+      return r.json();
+    });
 
     return this._client.execute({ resourceId: resourceId }, t => getFunctions);
   }
 
-  getFunction(resourceId: string, functionName: string): Result<ArmObj<FunctionInfo>> {
-    const getFunction = this._cacheService.getArm(`${resourceId}/functions/${functionName}`, false).map(r => r.json());
+  getFunction(resourceId: string, functionName: string, force?: boolean): Result<ArmObj<FunctionInfo>> {
+    const getFunction = this._cacheService.getArm(`${resourceId}/functions/${functionName}`, force).map(r => r.json());
 
     return this._client.execute({ resourceId: resourceId }, t => getFunction);
+  }
+
+  updateFunction(resourceId: string, functionInfo: FunctionInfo): Result<ArmObj<FunctionInfo>> {
+    const functionInfoCopy = <FunctionInfo>{};
+    for (const prop in functionInfo) {
+      if (functionInfo.hasOwnProperty(prop) && prop !== 'functionApp') {
+        functionInfoCopy[prop] = functionInfo[prop];
+      }
+    }
+
+    const payload = JSON.stringify({
+      properties: functionInfoCopy,
+    });
+
+    const updateFunction = this._cacheService.putArm(`${resourceId}/functions/${functionInfo.name}`, null, payload).map(r => r.json());
+
+    return this._client.execute({ resourceId: resourceId }, t => updateFunction);
   }
 
   createFunction(resourceId: string, functionName: string, files: any, config: any): Result<ArmObj<FunctionInfo>> {

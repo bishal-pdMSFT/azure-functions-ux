@@ -2,10 +2,12 @@ import React from 'react';
 import { LogEntry, LogsEnabled, LogType } from './LogStream.types';
 import { processLogs, processLogConfig, logStreamEnabled } from './LogStreamData';
 import LogStream from './LogStream';
-import { ArmTokenContext } from '../../../ArmTokenContext';
-import { ArmObj, Site } from '../../../models/WebAppModels';
 import SiteService from '../../../ApiHelpers/SiteService';
 import LogService from '../../../utils/LogService';
+import { ArmObj } from '../../../models/arm-obj';
+import { Site } from '../../../models/site/site';
+import { isFunctionApp } from '../../../utils/arm-utils';
+import Url from '../../../utils/url';
 
 export interface LogStreamDataLoaderProps {
   resourceId: string;
@@ -22,11 +24,11 @@ export interface LogStreamDataLoaderState {
 }
 
 class LogStreamDataLoader extends React.Component<LogStreamDataLoaderProps, LogStreamDataLoaderState> {
-  public static contextType = ArmTokenContext;
   private _currentSiteId = '';
   private _xhReq: XMLHttpRequest;
   private _logStreamIndex = 0;
   private _logType = LogType.Application;
+  private _timeStart = 0;
 
   constructor(props) {
     super(props);
@@ -129,6 +131,7 @@ class LogStreamDataLoader extends React.Component<LogStreamDataLoaderProps, LogS
     if (this._xhReq) {
       this._xhReq.abort();
       this._logStreamIndex = 0;
+      this._timeStart = 0;
     }
   };
 
@@ -136,16 +139,14 @@ class LogStreamDataLoader extends React.Component<LogStreamDataLoaderProps, LogS
     if (!this.state.site || !logStreamEnabled(this._logType, this.state.logsEnabled)) {
       return;
     }
-    const hostNameSslStates = this.state.site.properties.hostNameSslStates;
-    const scmHostName = hostNameSslStates.find(h => !!h.name && h.name.includes('.scm.'))!.name;
-    const suffix = this._logType === LogType.WebServer ? 'http' : '';
-    const logUrl = `https://${scmHostName}/api/logstream/${suffix}`;
-    const token = this.context;
+    const logUrl = this._setLogUrl();
+    const token = window.appsvc && window.appsvc.env && window.appsvc.env.armToken;
     this._xhReq = new XMLHttpRequest();
     this._xhReq.open('GET', logUrl, true);
     this._xhReq.setRequestHeader('Authorization', `Bearer ${token}`);
     this._xhReq.setRequestHeader('FunctionsPortal', '1');
     this._xhReq.send(null);
+    this._timeStart = new Date().getMinutes();
   };
 
   private _listenForErrors = () => {
@@ -154,6 +155,12 @@ class LogStreamDataLoader extends React.Component<LogStreamDataLoaderProps, LogS
         this.setState({
           connectionError: true,
         });
+        // Automatically attempt to reconnect the connection
+        // if connection has been open for less than 15 minutes
+        const errorTime = new Date().getMinutes();
+        if (Math.abs(this._timeStart - errorTime) < 15) {
+          this._reconnectFunction();
+        }
       };
     }
   };
@@ -178,6 +185,17 @@ class LogStreamDataLoader extends React.Component<LogStreamDataLoaderProps, LogS
         });
       }
     }
+  };
+
+  private _setLogUrl = (): string => {
+    const scmUrl = Url.getScmUrl(this.state.site);
+
+    if (isFunctionApp(this.state.site) && this._logType === LogType.Application) {
+      return `${scmUrl}/api/logstream/application/functions/host`;
+    }
+
+    const suffix = this._logType === LogType.WebServer ? 'http' : '';
+    return `${scmUrl}/api/logstream/${suffix}`;
   };
 }
 

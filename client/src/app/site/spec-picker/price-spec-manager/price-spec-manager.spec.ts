@@ -68,6 +68,7 @@ xdescribe('Price Spec Manager', () => {
         forbiddenSkus: [],
         isLinux: false,
         isXenon: false,
+        hyperV: false,
         selectedLegacySkuName: 'Legacy-Group2-Recommended1',
       },
       specPicker: null,
@@ -241,7 +242,8 @@ class MockPriceSpec extends PriceSpec {
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: 700,
         resourceId: null,
       },
     ],

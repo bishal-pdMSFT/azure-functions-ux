@@ -5,11 +5,7 @@ export class WizardForm {
   public buildSettings: VstsBuildSettings;
 }
 
-export class VstsBuildSettings {
-  public createNewVsoAccount: boolean;
-  public vstsAccount: string;
-  public vstsProject: string;
-  public location: string;
+export class BuildSettings {
   public applicationFramework:
     | 'AspNetWap'
     | 'AspNetCore'
@@ -25,6 +21,16 @@ export class VstsBuildSettings {
   public pythonSettings: PythonSettings;
   public frameworkVersion: string;
   public startupCommand: string;
+  public runtimeStack: string;
+  public runtimeStackVersion: string;
+  public runtimeStackRecommendedVersion: string;
+}
+
+export class VstsBuildSettings extends BuildSettings {
+  public createNewVsoAccount: boolean;
+  public vstsAccount: string;
+  public vstsProject: string;
+  public location: string;
 }
 
 export class PythonSettings {
@@ -37,11 +43,14 @@ export class SourceSettings {
   public repoUrl: string;
   public branch: string;
   public isManualIntegration: boolean;
+  public isGitHubAction: boolean;
   public deploymentRollbackEnabled: boolean;
   public isMercurial: boolean;
   public privateRepo: boolean;
   public username: string;
   public password: string;
+  public githubActionWorkflowOption: string;
+  public githubActionExistingWorkflowContents: string;
 }
 export class DeploymentCenterSetupModel {
   public sourceProvider: sourceControlProvider;
@@ -69,16 +78,20 @@ export type sourceControlProvider =
  * DEPLOYMENT TARGET MODELS
  */
 
-export interface ProvisioningConfiguration {
+export interface ProvisioningConfigurationBase {
   authToken: string;
-  /**
-   * Gets or sets the CI/CD configuration details.
-   */
-  ciConfiguration: CiConfiguration;
   /**
    * Gets or sets the unique identifier of the provisioning configuration.
    */
   id: string;
+
+  /**
+   * Gets or sets the CI/CD configuration details.
+   */
+  ciConfiguration: CiConfiguration;
+}
+
+export interface ProvisioningConfiguration extends ProvisioningConfigurationBase {
   /**
    * Gets or sets the deployment source.
    */
@@ -87,6 +100,15 @@ export interface ProvisioningConfiguration {
    * Gets or sets one or more deployment targets.
    */
   targets: DeploymentTarget[];
+}
+
+export interface ProvisioningConfigurationV2 extends ProvisioningConfigurationBase {
+  /* Below parameters are for pipelineTemplate API*/
+  pipelineTemplateId: string;
+
+  pipelineTemplateParameters: { [key: string]: string };
+
+  repository: CodeRepository;
 }
 
 export enum DeploymentTargetProvider {
@@ -300,4 +322,31 @@ export interface CodeRepository {
   defaultBranch: string;
   type: string;
   id?: string;
+}
+
+/**
+ * AAD authorization parameters which are required for verifying if a user has permissions to register a new app in an Active Directory
+ */
+export interface AadAuthorizationParameters {
+  /**
+   * Gets tenant Id of the Azure Active Directory
+   */
+  tenantId: string;
+  /**
+   * Gets Azure active directory issued token for VSTS service
+   */
+  token: string;
+}
+
+export interface PermissionsResultCreationParameters {
+  aadPermissions: AadAuthorizationParameters;
+}
+
+export interface PermissionResult {
+  message: string;
+  value: boolean;
+}
+
+export interface PermissionsResult {
+  aadPermissions: PermissionResult;
 }

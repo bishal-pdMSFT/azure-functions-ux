@@ -5,7 +5,7 @@ import { Subject } from 'rxjs/Subject';
 import { Subscription as RxSubscription } from 'rxjs/Subscription';
 import { DisableInfo } from './feature-item';
 import { PortalService } from '../shared/services/portal.service';
-import { OpenBladeInfo } from '../shared/models/portal';
+import { OpenBladeInfo, FrameBladeParams } from '../shared/models/portal';
 import { SiteTabIds } from 'app/shared/models/constants';
 import { PortalResources } from 'app/shared/models/portal-resources';
 
@@ -46,6 +46,7 @@ export class FeatureItem {
 
 export class DisableableFeature extends FeatureItem {
   private _enabledRxSub: RxSubscription;
+  private _overrideSub: RxSubscription;
   public enabled = false;
 
   constructor(
@@ -55,17 +56,17 @@ export class DisableableFeature extends FeatureItem {
     imageUrl: string,
     superScriptIconUrl?: string,
     _disableInfoStream?: Subject<DisableInfo>,
-    overrideDisableInfo?: ScenarioResult // If the feature is known to be disabled before any async logic, then use this disable immediately
+    overrideDisableInfo?: ScenarioResult, // If the feature is known to be disabled before any async logic, then use this disable immediately
+    overrideDisableStream?: Subject<ScenarioResult>
   ) {
     super(title, keywords, info, imageUrl, superScriptIconUrl);
 
     if (overrideDisableInfo) {
-      // Assumes that all scenario results for feature items are a black list
-      if (overrideDisableInfo.status === 'disabled') {
-        this.warning = overrideDisableInfo.data;
-      }
-
-      this.enabled = overrideDisableInfo.status !== 'disabled';
+      this.setWarningandEnabled(overrideDisableInfo);
+    } else if (overrideDisableStream) {
+      this._overrideSub = overrideDisableStream.subscribe(streamInfo => {
+        this.setWarningandEnabled(streamInfo);
+      });
     } else if (_disableInfoStream) {
       this._enabledRxSub = _disableInfoStream.subscribe(disableInfo => {
         this.enabled = disableInfo.enabled;
@@ -82,42 +83,71 @@ export class DisableableFeature extends FeatureItem {
       this._enabledRxSub.unsubscribe();
       this._enabledRxSub = null;
     }
+
+    if (this._overrideSub) {
+      this._overrideSub.unsubscribe();
+      this._overrideSub = null;
+    }
+  }
+
+  setWarningandEnabled(scenarioResult: ScenarioResult) {
+    if (scenarioResult.status === 'disabled') {
+      this.warning = scenarioResult.data;
+    }
+
+    this.enabled = scenarioResult.status !== 'disabled';
   }
 }
 
-export class DisableableBladeFeature extends DisableableFeature {
+abstract class BaseDisableableBladeFeature<T = any> extends DisableableFeature {
   constructor(
     title: string,
     keywords: string,
     info: string,
     imageUrl: string,
-    protected _bladeInfo: OpenBladeInfo,
+    protected _bladeInfo: OpenBladeInfo<T>,
     protected _portalService: PortalService,
     disableInfoStream?: Subject<DisableInfo>,
     overrideDisableInfo?: ScenarioResult
   ) {
     super(title, keywords, info, imageUrl, null, disableInfoStream, overrideDisableInfo);
   }
+}
 
+export class DisableableBladeFeature extends BaseDisableableBladeFeature<any> {
   click() {
     this._portalService.openBlade(this._bladeInfo, 'site-manage');
   }
 }
 
-export class BladeFeature extends FeatureItem {
+export class DisableableFrameBladeFeature<T = any> extends BaseDisableableBladeFeature<FrameBladeParams<T>> {
+  click() {
+    this._portalService.openFrameBlade(this._bladeInfo, 'site-manage');
+  }
+}
+
+abstract class BaseBladeFeature<T = any> extends FeatureItem {
   constructor(
     title: string,
     keywords: string,
     info: string,
     imageUrl: string,
-    public bladeInfo: OpenBladeInfo,
-    private _portalService: PortalService
+    public bladeInfo: OpenBladeInfo<T>,
+    protected _portalService: PortalService
   ) {
     super(title, keywords, info, imageUrl);
   }
+}
 
+export class BladeFeature extends BaseBladeFeature<any> {
   click() {
     this._portalService.openBlade(this.bladeInfo, 'site-manage');
+  }
+}
+
+export class FrameBladeFeature<T = any> extends BaseBladeFeature<FrameBladeParams<T>> {
+  click() {
+    this._portalService.openFrameBlade(this.bladeInfo, 'site-manage');
   }
 }
 

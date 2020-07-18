@@ -4,6 +4,7 @@ import { AppKind } from '../../../../../utils/AppKind';
 import { PriceSpec, PriceSpecInput, SpecColorCodes } from '../PriceSpec';
 import { style } from 'typestyle';
 import i18next from 'i18next';
+import { Links } from '../../../../../utils/FwLinks';
 
 export abstract class PremiumPlanPriceSpec extends PriceSpec {
   constructor(t: i18next.TFunction) {
@@ -49,7 +50,7 @@ export abstract class PremiumPlanPriceSpec extends PriceSpec {
         iconUrl: 'image/app-service-plan.svg',
         title: t('pricing_includedHardware_azureComputeUnits'),
         description: t('pricing_computeDedicatedAcu'),
-        learnMoreUrl: CommonConstants.Links.azureComputeUnitLearnMore,
+        learnMoreUrl: Links.azureComputeUnitLearnMore,
       },
       {
         id: 'memory',
@@ -74,7 +75,7 @@ export abstract class PremiumPlanPriceSpec extends PriceSpec {
     if (input.plan) {
       if (
         input.plan.properties.hostingEnvironmentProfile ||
-        input.plan.properties.isXenon ||
+        input.plan.properties.hyperV ||
         AppKind.hasAnyKind(input.plan, [CommonConstants.Kinds.linux, CommonConstants.Kinds.elastic])
       ) {
         this.state = 'hidden';
@@ -84,7 +85,8 @@ export abstract class PremiumPlanPriceSpec extends PriceSpec {
         input.specPickerInput.data.hostingEnvironmentName ||
         input.specPickerInput.data.isLinux ||
         input.specPickerInput.data.isXenon ||
-        input.specPickerInput.data.isElastic
+        input.specPickerInput.data.hyperV ||
+        (input.specPickerInput.data.isNewFunctionAppCreate && input.specPickerInput.data.isElastic)
       ) {
         this.state = 'hidden';
       }

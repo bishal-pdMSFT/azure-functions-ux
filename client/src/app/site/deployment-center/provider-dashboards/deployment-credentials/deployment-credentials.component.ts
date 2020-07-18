@@ -64,7 +64,7 @@ export class DeploymentCredentialsComponent extends FeatureComponent<string> imp
     super('DeploymentCredentialsComponent', injector);
     const requiredValidation = new RequiredValidator(this._translateService, true);
     const passwordValidator = RegexValidator.create(
-      /^(?=.*[a-zA-Z])(?=.*\d)[a-zA-Z\d@$!%*#?&]{8,}$/, //The specified password does not meet the minimum requirements. The password should be at least eight characters long and must contain letters and numbers.
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, //The specified password does not meet the minimum requirements. The password should be at least eight characters long and must contain letters, numbers, and symbols.
       this._translateService.instant(PortalResources.userCredsError)
     );
     this.userPasswordForm = fb.group({
@@ -100,8 +100,8 @@ export class DeploymentCredentialsComponent extends FeatureComponent<string> imp
           this.appPwd = ftpProfile.userPWD;
         });
 
-      const publishingUsers$ = this._cacheService.getArm(`/providers/Microsoft.Web/publishingUsers/web`, true).do(r => {
-        const creds = r.json();
+      const publishingUsers$ = this._siteService.getPublishingUser().do(r => {
+        const creds = r.result;
         const siteDescriptor = new ArmSiteDescriptor(this.resourceId);
         let siteName = siteDescriptor.site;
         const slotName = siteDescriptor.slot;
@@ -146,7 +146,11 @@ export class DeploymentCredentialsComponent extends FeatureComponent<string> imp
         this.resetting = false;
         this.setInput(this.resourceId);
         if (result) {
-          this._portalService.stopNotification(resetPublishingProfileNotificationId, true, PortalResources.resettingCredentialsSucccess);
+          this._portalService.stopNotification(
+            resetPublishingProfileNotificationId,
+            true,
+            this._translateService.instant(PortalResources.resettingCredentialsSuccess)
+          );
         }
       });
 
@@ -185,7 +189,11 @@ export class DeploymentCredentialsComponent extends FeatureComponent<string> imp
         this.saving = false;
         this.setInput(this.resourceId);
         if (result) {
-          this._portalService.stopNotification(saveUserCredentialsNotificationId, true, PortalResources.savingCredentialsSucccess);
+          this._portalService.stopNotification(
+            saveUserCredentialsNotificationId,
+            true,
+            this._translateService.instant(PortalResources.savingCredentialsSuccess)
+          );
         }
       });
     this.setInput(this.resourceId);

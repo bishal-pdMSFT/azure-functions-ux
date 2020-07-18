@@ -15,6 +15,10 @@ export class DynamicLinuxEnvironment extends Environment {
       data: translateService.instant(PortalResources.featureNotSupportedForLinuxConsumptionApps),
     };
 
+    const enabledResult: ScenarioResult = {
+      status: 'enabled',
+    };
+
     this.scenarioChecks[ScenarioIds.listExtensionsArm] = {
       id: ScenarioIds.listExtensionsArm,
       runCheck: () => {
@@ -29,20 +33,48 @@ export class DynamicLinuxEnvironment extends Environment {
       },
     };
 
-    this.scenarioChecks[ScenarioIds.addMsi] = {
-      id: ScenarioIds.addMsi,
-      runCheck: () => {
-        return { status: 'disabled' };
-      },
-    };
-
     this.scenarioChecks[ScenarioIds.enableConsole] = {
       id: ScenarioIds.enableConsole,
       runCheck: () => disabledResult,
     };
 
-    this.scenarioChecks[ScenarioIds.enableLinkAPIM] = {
-      id: ScenarioIds.enableLinkAPIM,
+    this.scenarioChecks[ScenarioIds.enableKudu] = {
+      id: ScenarioIds.enableKudu,
+      runCheck: () => disabledResult,
+    };
+
+    this.scenarioChecks[ScenarioIds.enableLogStream] = {
+      id: ScenarioIds.enableLogStream,
+      runCheck: () => disabledResult,
+    };
+
+    this.scenarioChecks[ScenarioIds.enableMetrics] = {
+      id: ScenarioIds.enableMetrics,
+      runCheck: () => disabledResult,
+    };
+
+    this.scenarioChecks[ScenarioIds.enableCORS] = {
+      id: ScenarioIds.enableCORS,
+      runCheck: () => enabledResult,
+    };
+
+    this.scenarioChecks[ScenarioIds.enableQuotas] = {
+      id: ScenarioIds.enableQuotas,
+      runCheck: () => disabledResult,
+    };
+
+    this.scenarioChecks[ScenarioIds.enableAuth] = {
+      id: ScenarioIds.enableAuth,
+      runCheck: () => disabledResult,
+    };
+
+    this.scenarioChecks[ScenarioIds.enableFunctionLogStreaming] = {
+      id: ScenarioIds.enableFunctionLogStreaming,
+      runCheck: () => disabledResult,
+    };
+
+    this.scenarioChecks[ScenarioIds.containerSettings] = {
+      id: ScenarioIds.containerSettings,
       runCheck: () => {
         return { status: 'disabled' };
       },

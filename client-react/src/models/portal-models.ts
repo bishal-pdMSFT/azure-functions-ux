@@ -11,21 +11,6 @@ export interface IData {
   data: any;
 }
 
-export interface ISubscriptionPolicies {
-  locationPlacementId: string;
-  quotaId: string;
-  spendingLimit: string;
-}
-
-export interface ISubscription {
-  id: string;
-  subscriptionId: string;
-  displayName: string;
-  state: string;
-  subscriptionPolicies: ISubscriptionPolicies;
-  authorizationSource: string;
-}
-
 export interface IUserInfo {
   email: string;
   givenName: string;
@@ -39,12 +24,13 @@ export interface IUserInfo {
   uniqueDirectoryName: string;
 }
 
-export interface IFeatureInfo {
+export interface IFeatureInfo<T> {
   id: string;
   feature: string;
+  data: T;
 }
 
-export interface IStartupInfo {
+export interface IStartupInfo<T> {
   sessionId: string;
   token: string;
   acceptLanguage: string;
@@ -54,7 +40,7 @@ export interface IStartupInfo {
   userInfo: IUserInfo;
   theme: string;
   armEndpoint: string;
-  featureInfo: IFeatureInfo;
+  featureInfo: IFeatureInfo<T>;
 }
 
 export interface IDataMessage<T> {
@@ -94,6 +80,7 @@ export class Verbs {
   public static openBladeCollectorInputs = 'open-blade-collector-inputs'; // Deprecated
   public static updateBladeInfo = 'update-blade-info';
   public static returnPCV3Results = 'return-pcv3-results';
+  public static executeArmUpdateRequest = 'arm-update-request';
 
   public static closeBlades = 'close-blades';
   public static closeSelf = 'close-self';
@@ -109,12 +96,14 @@ export class Verbs {
   public static getSpecCosts = 'get-spec-costs';
   public static broadcastMessage = 'broadcast-message';
 
+  public static hasPermission = 'has-permission';
+  public static hasLock = 'has-lock';
+
   // Requests from Ibiza
   public static sendStartupInfo = 'send-startup-info';
   public static sendAppSettingName = 'send-appSettingName';
   public static sendResourceId = 'send-resourceId';
   public static sendInputs = 'send-inputs';
-  public static sendToken = 'send-token';
   public static sendToken2 = 'send-token2';
   public static sendOAuthInfo = 'send-oauth-info';
   public static sendNotificationStarted = 'send-notification-started';
@@ -137,12 +126,18 @@ export interface IWebsiteId {
   SubscriptionId: string;
 }
 
-export interface IOpenBladeInfo {
+export interface IOpenBladeInfo<T = any> {
   detailBlade: string;
-  detailBladeInputs: any;
+  detailBladeInputs: T;
   extension?: string;
   openAsContextBlade?: boolean;
   openAsSubJourney?: boolean;
+}
+
+export interface FrameBladeParams<T> {
+  id?: string;
+  feature?: string;
+  data?: T;
 }
 
 export interface ITimerEvent {
@@ -235,8 +230,10 @@ export enum PartSize {
   Custom = 99,
 }
 
+export type TokenType = 'graph' | 'azureTfsApi' | 'applicationinsightapi' | '';
+
 export interface ITokenResponse {
-  tokenType: 'graph' | 'azureTfsApi';
+  tokenType: TokenType;
   token: string;
 }
 
@@ -254,10 +251,83 @@ export enum BroadcastMessageId {
   siteUpdated = 'SITE_UPDATED',
   slotSwap = 'SLOT_SWAP',
   slotNew = 'SLOT_NEW',
+  menuItemSelected = 'SELECTED_MENU_ITEM',
 }
 
 export interface BroadcastMessage<T> {
   id: BroadcastMessageId;
   resourceId: string;
   metadata?: T;
+}
+
+export interface CheckPermissionRequest {
+  resourceId: string;
+  actions: string[];
+}
+
+export interface CheckPermissionResponse {
+  hasPermission: boolean;
+}
+
+export type LockType = 'ReadOnly' | 'Delete';
+
+export interface CheckLockRequest {
+  resourceId: string;
+  type: LockType;
+}
+
+export interface CheckLockResponse {
+  hasLock: boolean;
+}
+
+export interface PortalDebugInformation {
+  hostName: string;
+  appName: string;
+  version: string;
+}
+
+export interface SelectedMenuItemMessage {
+  menuId: MenuId;
+}
+
+export enum MenuId {
+  Overview = 'functionOverview',
+  Code = 'code',
+  Integration = 'integration',
+  Invocation = 'invocation',
+  StreamingLogs = 'streamingLogs',
+  FunctionKeys = 'functionKeys',
+}
+
+export enum SiteReadWriteState {
+  readonly = 'readonly',
+  readwrite = 'readwrite',
+}
+
+export enum FunctionAppEditMode {
+  ReadWriteSourceControlled,
+  ReadOnlySourceControlled,
+  ReadWrite,
+  ReadOnly,
+  ReadOnlySlots,
+  ReadOnlyVSGenerated,
+  ReadWriteVSGenerated,
+  ReadOnlyRunFromPackage,
+  ReadOnlyLocalCache,
+  ReadOnlyLinuxDynamic,
+  ReadOnlyBYOC,
+  ReadOnlyPython,
+  ReadOnlyJava,
+  ReadOnlyLinuxCodeElastic,
+  ReadOnlyLock,
+  ReadOnlyRbac,
+}
+
+export enum PortalTheme {
+  dark = 'dark',
+  light = 'light',
+}
+
+export interface KeyValue<T> {
+  [key: string]: T;
 }

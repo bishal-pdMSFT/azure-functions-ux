@@ -18,7 +18,8 @@ export class Constants {
   public static cdnHost = !!window.appsvc.cdn ? `${window.appsvc.cdn}/` : Constants.serviceHost;
   public static cdnNgMin = !!window.appsvc.cdn ? `${window.appsvc.cdn}/ng-min/` : '';
   public static nodeVersion = '6.5.0';
-  public static nodeVersionV2 = '8.11.1';
+  public static nodeVersionV2 = '~10';
+  public static nodeVersionV3 = '~12';
   public static latest = 'latest';
   public static disabled = 'disabled';
   public static runtimeVersionAppSettingName = 'FUNCTIONS_EXTENSION_VERSION';
@@ -27,8 +28,10 @@ export class Constants {
   public static routingExtensionVersionAppSettingName = 'ROUTING_EXTENSION_VERSION';
   public static functionAppEditModeSettingName = 'FUNCTION_APP_EDIT_MODE';
   public static instrumentationKeySettingName = 'APPINSIGHTS_INSTRUMENTATIONKEY';
-  public static slotsSecretStorageSettingsName = 'AzureWebJobsSecretStorageType';
-  public static slotsSecretStorageSettingsValue = 'Blob';
+  public static connectionStringSettingName = 'APPLICATIONINSIGHTS_CONNECTION_STRING';
+  public static secretStorageSettingsName = 'AzureWebJobsSecretStorageType';
+  public static secretStorageSettingsValueBlob = 'Blob';
+  public static secretStorageSettingsValueFiles = 'Files';
   public static contentShareConfigSettingsName = 'WEBSITE_CONTENTSHARE';
   public static azureWebJobsDashboardSettingsName = 'AzureWebJobsDashboard';
   public static functionsWorkerRuntimeAppSettingsName = 'FUNCTIONS_WORKER_RUNTIME';
@@ -57,6 +60,8 @@ export class Constants {
   public static WebhookHandlerFunctionName = 'RefreshO365Subscriptions';
   public static WebhookHandlerFunctionId = 'TimerTrigger-CSharpWebhookHandler';
   public static WebhookFunctionName = 'MSGraphWebhook';
+  public static appDensityLimit = 8;
+  public static defaultFunctionAppDockerImage = 'DOCKER|mcr.microsoft.com/azure-functions/dotnet:2.0-appservice-quickstart';
 }
 
 export class TabCommunicationVerbs {
@@ -150,7 +155,6 @@ export class Links {
   public static funcStorageLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2010003';
   public static updateExtensionsLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2013353';
   public static deploymentSlotsLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2014035';
-  public static dynamicLinuxPreviewLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2022864';
   public static communityTemplatesLink = 'https://go.microsoft.com/fwlink/?linkid=2022552&type=functionapp';
   public static linuxContainersLearnMore = 'https://go.microsoft.com/fwlink/?linkid=861969';
   public static premiumV2NotAvailableLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2009376';
@@ -160,15 +164,19 @@ export class Links {
   public static byosLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2045372';
   public static deploymentCredentialsLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2082375';
   public static ipRestrictionsLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2086703';
-  public static tipDeprecationLink = 'https://go.microsoft.com/fwlink/?linkid=2084425';
   public static elasticPremiumNotAvailableLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2086603';
   public static clientCertEnabledLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2086188';
   public static powershellPreviewLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2086831';
+  public static appDensityWarningLink = 'https://go.microsoft.com/fwlink/?linkid=2098431';
+  public static apimUpsellLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2104075';
+  public static runtimeScaleMonitoringLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2104710';
+  public static pv2FlexStampInfoLearnMore = 'https://go.microsoft.com/fwlink/?linkid=2116583';
 }
 
 export class Kinds {
   public static readonly linux = 'linux';
   public static readonly aseV2 = 'ASEV2';
+  public static readonly aseV3 = 'ASEV3';
   public static readonly container = 'container';
   public static readonly functionApp = 'functionapp';
   public static readonly botapp = 'botapp';
@@ -248,6 +256,7 @@ export class ScenarioIds {
   public static readonly enableMetrics = 'EnableMetrics';
   public static readonly enableBackups = 'EnableBackups';
   public static readonly enableTinfoil = 'EnableTinfoil';
+  public static readonly enableFunctionLogStreaming = 'EnableFunctionLogStreaming';
   public static readonly dotNetFrameworkSupported = 'DotNetFrameworkSupported';
   public static readonly platform64BitSupported = 'Platform64BitSupported';
   public static readonly webSocketsSupported = 'WebSocketsSupported';
@@ -312,12 +321,23 @@ export class ScenarioIds {
   public static readonly alwaysOnSupported = 'alwaysOnSupported';
   public static readonly enableConsole = 'EnableConsole';
   public static readonly enableLinkAPIM = 'EnableLinkAPIM';
+  public static readonly appDensity = 'appDensity';
+  public static readonly enableKudu = 'EnableKudu';
+  public static readonly enableCORS = 'EnableCORS';
+  public static readonly enableQuotas = 'EnableQuotas';
+  public static readonly hasRoleAssignmentPermission = 'hasRoleAssignmentPermission';
+  public static readonly containerSettings = 'containerSettings';
+  public static readonly isPublishProfileBasedDeploymentEnabled = 'isPublishProfileBasedDeploymentEnabled';
+  public static readonly enableGitHubAction = 'enableGitHubAction';
+  public static readonly tipSupported = 'tipSupported';
 }
 
 export class NationalCloudArmUris {
   public static readonly fairfax = 'https://management.usgovcloudapi.net';
   public static readonly blackforest = 'https://management.microsoftazure.de';
   public static readonly mooncake = 'https://management.chinacloudapi.cn';
+  public static readonly usNat: 'https://management.azure.eaglex.ic.gov';
+  public static readonly usSec: 'https://management.azure.microsoft.scloud';
 }
 
 export class LogCategories {
@@ -362,17 +382,18 @@ export class LogCategories {
   public static readonly containerACR = 'containerACR';
   public static readonly containerSettings = 'containerSettings';
   public static readonly byos = 'byos';
+  public static readonly portalServiceHasPermission = 'PortalServiceHasPermission';
+  public static readonly portalServiceHasLock = 'PortalServiceHasLock';
 }
 
 export class ARMApiVersions {
-  public static websiteApiVersion = '2015-08-01';
-  public static websiteApiVersion20160301 = '2016-03-01';
-  public static websiteApiVersion20180201 = '2018-02-01';
-  public static websiteApiVersion20181101 = '2018-11-01';
+  public static antaresApiVersion20181101 = '2018-11-01';
   public static armApiVersion = '2014-04-01';
   public static acrApiversion = '2017-03-01';
   public static acrWebhookApiVersion = '2017-10-01';
+  public static serviceBusAndEventHubApiVersion20150801 = '2015-08-01';
   public static storageApiVersion = '2018-07-01';
+  public static stacksApiVersion20200501 = '2020-05-01';
 }
 export class SubscriptionQuotaIds {
   public static readonly dreamSparkQuotaId = 'DreamSpark_2015-02-01';
@@ -484,13 +505,26 @@ export class DeploymentCenterConstants {
   public static readonly dropboxApiUrl = 'https://api.dropboxapi.com/2';
   public static readonly dropboxUri = 'https://www.dropbox.com/home/Apps/Azure';
   public static readonly onedriveApiUri = 'https://api.onedrive.com/v1.0/drive/special/approot';
-  public static readonly vstsProfileUri = 'https://peprodscussu2.portalext.visualstudio.com/_apis/AzureTfs/UserContext';
-  public static readonly vstsProjectsApi = 'https://{0}.visualstudio.com/_apis/projects?includeCapabilities=true';
-  public static readonly vstsRegionsApi = 'https://aex.dev.azure.com/_apis/hostacquisition/regions';
-  public static readonly vstsAccountsFetchUri =
-    'https://commerceprodwus21.vscommerce.visualstudio.com/_apis/Subscription/Subscription?memberId={0}&includeMSAAccounts=true&queryOnlyOwnerAccounts=false&inlcudeDisabledAccounts=false&includeMSAAccounts=true&providerNamespaceId=VisualStudioOnline';
+
+  public static readonly AzDevDevFabricTfsUri = 'https://codedev.ms/';
+  public static readonly AzDevDevFabricSpsUri = 'https://vssps.codedev.ms/';
+  public static readonly AzDevDevFabricRmoUri = 'https://vsrm.codedev.ms/';
+  public static readonly AzDevDevFabricPeDeploymentLevelUri = 'https://portalext.codedev.ms/';
+  public static readonly AzDevDevFabricPeCollectionLevelUri = 'https://portalext.codedev.ms/{0}/';
+  public static readonly AzDevDevFabricAexUri = 'https://aex.codedev.ms/';
+
+  public static readonly AzDevPreFlightPeDeploymentLevelUri = 'https://pepfcusc.portalext.visualstudio.com/';
+
+  public static readonly AzDevProductionTfsUri = 'https://dev.azure.com/';
+  public static readonly AzDevProductionSpsUri = 'https://vssps.dev.azure.com/';
+  public static readonly AzDevProductionRmoUri = 'https://vsrm.dev.azure.com/';
+  public static readonly AzDevProductionPeDeploymentLevelUri = 'https://peprodscussu2.portalext.visualstudio.com/';
+  public static readonly AzDevProductionPeCollectionLevelUri = 'https://portalext.dev.azure.com/{0}/';
+  public static readonly AzDevProductionAexUri = 'https://vsaex.dev.azure.com/';
 
   public static readonly permissionsInfoLink = 'https://go.microsoft.com/fwlink/?linkid=2086046';
+
+  public static readonly vstsPipelineFeatureId = 'ms.vss-build.pipelines';
   // VSTS Validation constants
   // Build definition
   public static readonly buildSecurityNameSpace = '33344D9C-FC72-4d6f-ABA5-FA317101A7E9';
@@ -504,7 +538,13 @@ export class DeploymentCenterConstants {
   public static readonly agentQueueNames = ['Hosted VS2017'];
   public static readonly queueActionFilter = 16; // "Use"
 
+  // Tfs Git permission
+  public static readonly tfsGitSecurityNameSpace = '2E9EB7ED-3C0A-47D4-87C1-0FFDD275FD87';
+  public static readonly createRepositoryPermission = 256;
+
   public static readonly EmptyGuid = '00000000-0000-0000-0000-000000000000';
+
+  public static readonly protectedBranchSelectedLink = 'https://go.microsoft.com/fwlink/?linkid=2120729';
 }
 
 export class ComponentNames {
@@ -514,6 +554,7 @@ export class ComponentNames {
   public static tableFunctionMonitor = 'table-function-monitor';
   public static monitorDetails = 'monitor-details';
   public static monitorConfigure = 'monitor-configure';
+  public static newProxy = 'new-proxy';
 }
 
 export class WorkerRuntimeLanguages {
@@ -540,10 +581,6 @@ export class ConsoleConstants {
   public static readonly changeDirectory = 'cd';
   public static readonly windowsClear = 'cls';
   public static readonly linuxClear = 'clear';
-}
-
-export class HostTypes {
-  public static readonly scm = 1;
 }
 
 export enum LogLevel {
@@ -610,8 +647,11 @@ export class FeatureFlags {
   public static UseNewSlotsBlade = 'UseNewSlotsBlade';
   public static ShowLegacySlotsBlade = 'ShowLegacySlotsBlade';
   public static oldDeploymentCenter = 'oldvsts';
-  public static EnableLinuxElasticPremium = 'EnableLinuxElasticPremium';
   public static AllowFreeLinux = 'allowfreelinux';
+  public static enablePublishProfileBasedDeployment = 'enablePublishProfileBasedDeployment';
+  public static targetAzDevDeployment = 'targetAzDevDeployment';
+  public static authTokenOverride = 'authTokenOverride';
+  public static EnableAIOnNationalCloud = 'EnableAIOnNationalCloud';
 }
 
 export class SupportedFeatures {
@@ -621,10 +661,48 @@ export class SupportedFeatures {
 export enum FunctionAppVersion {
   v1 = 'V1',
   v2 = 'V2',
+  v3 = 'V3',
+}
+
+export enum FunctionAppRuntimeSetting {
+  tilda1 = '~1',
+  tilda2 = '~2',
+  tilda3 = '~3',
 }
 
 export enum HostKeyTypes {
   masterKey = 'masterKey',
   functionKeys = 'functionKeys',
   systemKeys = 'systemKeys',
+}
+
+export class Pricing {
+  public static hoursInAzureMonth = 730;
+  public static secondsInAzureMonth = 2628000;
+}
+
+export class RuntimeStacks {
+  public static aspnet = 'dotnet';
+  public static node = 'node';
+  public static python = 'python';
+  public static dotnetcore = 'dotnetcore';
+  public static java8 = 'java-8';
+  public static java11 = 'java-11';
+}
+
+export class Os {
+  public static linux: 'linux' | 'windows' = 'linux';
+  public static windows: 'linux' | 'windows' = 'windows';
+}
+
+export class JavaVersions {
+  public static WindowsVersion8 = '1.8';
+  public static WindowsVersion11 = '11';
+  public static LinuxVersion8 = 'java8';
+  public static LinuxVersion11 = 'java11';
+}
+
+export class JavaContainers {
+  public static JavaSE = 'java';
+  public static Tomcat = 'tomcat';
 }

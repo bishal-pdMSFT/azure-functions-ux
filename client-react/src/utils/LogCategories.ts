@@ -2,7 +2,7 @@ export class LogCategories {
   public static readonly FunctionEdit = 'FunctionEdit';
   public static readonly FunctionMonitor = 'FunctionMonitor';
   public static readonly SideNav = 'SideNav';
-  public static readonly siteDashboard = 'SiteDashboard';
+  public static readonly siteRouter = 'SiteRouter';
   public static readonly scenarioService = 'ScenarioService';
   public static readonly apiDetails = 'ApiDetails';
   public static readonly broadcastService = 'BroadcastService';
@@ -41,4 +41,19 @@ export class LogCategories {
   public static readonly containerSettings = 'containerSettings';
   public static readonly armHelper = 'ArmHelper';
   public static readonly argHelper = 'ArgHelper';
+  public static readonly changeAppPlan = 'ChangeAppPlan';
+  public static readonly bindingEditor = 'BindingEditor';
+  public static readonly functionCreate = 'FunctionCreate';
+  public static readonly portalCommunicatorHasPermission = 'PortalCommunicatorHasPermission';
+  public static readonly portalCommunicatorHasLock = 'PortalCommunicatorHasLock';
+  public static readonly bindingResource = 'BindingResource';
+  public static readonly functionIntegrate = 'FunctionIntegrate';
+  public static readonly functionInvokeUrl = 'FunctionInvokeUrl';
+  public static readonly functionKeys = 'FunctionKeys';
+  public static readonly appFiles = 'AppFiles';
+  public static readonly functionLog = 'FunctionLog';
+  public static readonly localStorage = 'LocalStorage';
+  public static readonly deploymentCenter = 'DeploymentCenter';
+  public static readonly functionAppLog = 'FunctionAppLog';
+  public static readonly staticSiteConfiguration = 'StaticSiteConfiguration';
 }

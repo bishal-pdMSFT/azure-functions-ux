@@ -1,4 +1,3 @@
-import { ArmArray, ArmObj } from './../models/WebAppModels';
 import axios, { AxiosResponse } from 'axios';
 import { CommonConstants } from '../utils/CommonConstants';
 import { Subject, from } from 'rxjs';
@@ -9,9 +8,12 @@ import Url from '../utils/url';
 import { MethodTypes, ArmRequestObject, HttpResponseObject } from '../ArmHelper.types';
 import LogService from '../utils/LogService';
 import { LogCategories } from '../utils/LogCategories';
+import { ArmArray, ArmObj } from '../models/arm-obj';
+import { KeyValue } from '../models/portal-models';
 
-const alwaysSkipBatch = !!Url.getParameterByName(null, 'appsvc.skipbatching');
+const alwaysSkipBatching = !!Url.getParameterByName(null, 'appsvc.skipbatching');
 const sessionId = Url.getParameterByName(null, 'sessionId');
+
 interface InternalArmRequest {
   method: MethodTypes;
   resourceId: string;
@@ -20,23 +22,26 @@ interface InternalArmRequest {
   body: any;
   apiVersion: string | null;
   queryString?: string;
+  headers?: KeyValue<string>;
 }
 
 interface ArmBatchObject {
   httpStatusCode: number;
-  headers: { [key: string]: string };
+  headers: KeyValue<string>;
   contentLength: number;
   content: any;
   id?: string;
 }
+
 interface ArmBatchResponse {
   responses: ArmBatchObject[];
 }
+
 const bufferTimeInterval = 100; // ms
 const maxBufferSize = 20;
 const armSubject$ = new Subject<InternalArmRequest>();
 const armObs$ = armSubject$.pipe(
-  bufferTime(bufferTimeInterval, bufferTimeInterval, maxBufferSize, async),
+  bufferTime(bufferTimeInterval, null, maxBufferSize, async),
   filter(x => x.length > 0),
   concatMap(x => {
     const batchBody = x.map(arm => {
@@ -47,10 +52,12 @@ const armObs$ = armSubject$.pipe(
         content: arm.body,
         requestHeaderDetails: {
           commandName: arm.commandName,
+          ...arm.headers,
         },
         url: Url.appendQueryString(`${arm.resourceId}${arm.queryString || ''}`, apiVersionString),
       };
     });
+
     return from(
       makeArmRequest<ArmBatchResponse>({
         method: 'POST',
@@ -75,14 +82,18 @@ const armObs$ = armSubject$.pipe(
 
 const makeArmRequest = async <T>(armObj: InternalArmRequest, retry = 0): Promise<AxiosResponse<T>> => {
   const { method, resourceId, body, apiVersion, queryString } = armObj;
-  const url = Url.appendQueryString(`${window.armEndpoint}${resourceId}${queryString || ''}`, `api-version=${apiVersion}`);
-  const headers: { [key: string]: string } = {
-    Authorization: `Bearer ${window.authToken}`,
+  const armEndpoint = window.appsvc && window.appsvc.env && window.appsvc.env.azureResourceManagerEndpoint;
+  const url = Url.appendQueryString(`${armEndpoint}${resourceId}${queryString || ''}`, `api-version=${apiVersion}`);
+  const headers: KeyValue<string> = {
+    Authorization: `Bearer ${window.appsvc && window.appsvc.env && window.appsvc.env.armToken}`,
     'x-ms-client-request-id': armObj.id,
+    ...armObj.headers,
   };
+
   if (sessionId) {
     headers['x-ms-client-session-id'] = sessionId;
   }
+
   try {
     const result = await axios({
       url,
@@ -91,14 +102,22 @@ const makeArmRequest = async <T>(armObj: InternalArmRequest, retry = 0): Promise
       data: body,
       validateStatus: () => true, // never throw on an error, we can check the status and handle the error in the UI
     });
+
     if (retry < 2 && result.status === 401) {
       if (window.updateAuthToken) {
         const newToken = await window.updateAuthToken('');
-        window.authToken = newToken;
+        if (window.appsvc && window.appsvc.env) {
+          window.appsvc.env.armToken = newToken;
+        } else {
+          throw Error('window.appsvc not available');
+        }
+
         return makeArmRequest(armObj, retry + 1);
       }
     }
+
     LogService.trackEvent(LogCategories.armHelper, 'makeArmRequest', { resourceId, method, sessionId, correlationId: armObj.id });
+
     return result;
   } catch (err) {
     // This shouldn't be hit since we're telling axios to not throw on error
@@ -108,7 +127,7 @@ const makeArmRequest = async <T>(armObj: InternalArmRequest, retry = 0): Promise
 };
 
 const MakeArmCall = async <T>(requestObject: ArmRequestObject<T>): Promise<HttpResponseObject<T>> => {
-  const { skipBuffer, method, resourceId, body, apiVersion, commandName, queryString } = requestObject;
+  const { skipBatching, method, resourceId, body, apiVersion, commandName, queryString, headers } = requestObject;
 
   const id = Guid.newGuid();
   const armBatchObject: InternalArmRequest = {
@@ -117,11 +136,12 @@ const MakeArmCall = async <T>(requestObject: ArmRequestObject<T>): Promise<HttpR
     commandName,
     queryString,
     id,
+    headers: headers || {},
     method: method || 'GET',
-    apiVersion: apiVersion !== null ? apiVersion || CommonConstants.ApiVersions.websiteApiVersion20180201 : null,
+    apiVersion: apiVersion !== null ? apiVersion || CommonConstants.ApiVersions.antaresApiVersion20181101 : null,
   };
 
-  if (!skipBuffer && !alwaysSkipBatch) {
+  if (!skipBatching && !alwaysSkipBatching) {
     const fetchFromBatch = new Promise<ArmBatchObject>((resolve, reject) => {
       armObs$
         .pipe(
@@ -131,8 +151,10 @@ const MakeArmCall = async <T>(requestObject: ArmRequestObject<T>): Promise<HttpR
         .subscribe(x => {
           resolve(x);
         });
+
       armSubject$.next(armBatchObject);
     });
+
     const res = await fetchFromBatch;
     const resSuccess = res.httpStatusCode < 300;
     const ret: HttpResponseObject<T> = {
@@ -144,8 +166,10 @@ const MakeArmCall = async <T>(requestObject: ArmRequestObject<T>): Promise<HttpR
       },
       data: resSuccess ? res.content : null,
     };
+
     return ret;
   }
+
   const response = await makeArmRequest<T>(armBatchObject);
   const responseSuccess = response.status < 300;
   const retObj: HttpResponseObject<T> = {
@@ -157,7 +181,37 @@ const MakeArmCall = async <T>(requestObject: ArmRequestObject<T>): Promise<HttpR
     },
     data: response.data,
   };
+
   return retObj;
+};
+
+export const getErrorMessage = (error: any, recursionLimit: number = 1): string => {
+  return _extractErrorMessage(error, recursionLimit);
+};
+
+export const getErrorMessageOrStringify = (error: any, recursionLimit: number = 1): string => {
+  const extractedError = _extractErrorMessage(error, recursionLimit);
+  return !!extractedError ? extractedError : JSON.stringify(error || {});
+};
+
+const _extractErrorMessage = (error: any, recursionLimit: number): string => {
+  if (!error) {
+    return '';
+  }
+
+  if (Object(error) !== error) {
+    // The error is a primative type, not an object.
+    // If it is a string, just return the value. Otherwise, return any empty string because there's nothing to extract.
+    return typeof error === 'string' ? (error as string) : '';
+  }
+
+  // Check if a "message" property is present on the error object.
+  if (error.message || error.Message) {
+    return error.message || error.Message;
+  }
+
+  // No "message" property was present, so check if there is an inner error object with a "message" property.
+  return recursionLimit ? _extractErrorMessage(error.error, recursionLimit - 1) : '';
 };
 
 export const MakePagedArmCall = async <T>(requestObject: ArmRequestObject<ArmArray<T>>): Promise<ArmObj<T>[]> => {

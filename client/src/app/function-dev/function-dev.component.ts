@@ -47,10 +47,11 @@ import { FunctionKeys, HostKeys } from '../shared/models/function-key';
 import { MonacoHelper } from '../shared/Utilities/monaco.helper';
 import { AccessibilityHelper } from '../shared/Utilities/accessibility-helper';
 import { LogService } from '../shared/services/log.service';
-import { LogCategories, WebhookTypes, FunctionAppVersion } from '../shared/models/constants';
+import { LogCategories, WebhookTypes } from '../shared/models/constants';
 import { ArmUtil } from '../shared/Utilities/arm-utils';
 import { AiService } from 'app/shared/services/ai.service';
 import { FunctionService } from 'app/shared/services/function.service';
+import { runtimeIsV1 } from 'app/shared/models/functions-version-info';
 
 type FileSelectionEvent = VfsObject | [VfsObject, monaco.editor.IMarkerData[], monaco.editor.IMarkerData];
 
@@ -113,7 +114,6 @@ export class FunctionDevComponent extends FunctionAppContextComponent
   public expandLogs = false;
   public functionKeys: FunctionKeys;
   public hostKeys: HostKeys;
-  public masterKey: string;
   public isStandalone: boolean;
   public inTab: boolean;
   public disabled: Observable<boolean>;
@@ -134,6 +134,7 @@ export class FunctionDevComponent extends FunctionAppContextComponent
   private _restartHostSubscription: Subscription;
 
   private functionAppVersion: string;
+  private _initialSetFocus = true;
 
   constructor(
     private broadcastService: BroadcastService,
@@ -228,10 +229,11 @@ export class FunctionDevComponent extends FunctionAppContextComponent
         this.showConsole = !ArmUtil.isLinuxDynamic(functionView.context.site);
         return Observable.zip(
           Observable.of(functionView),
-          this._functionAppService.getEventGridUri(functionView.context, functionView.functionInfo.result.name),
+          this._functionAppService.getEventGridUri(functionView.context, functionView.functionInfo.result.properties.name),
           this._functionAppService.getFunctionHostStatus(functionView.context),
           this._functionAppService.getFunctionErrors(functionView.context, functionView.functionInfo.result.properties),
-          this._functionAppService.getRuntimeGeneration(functionView.context)
+          this._functionAppService.getRuntimeGeneration(functionView.context),
+          this._functionAppService.getFunctionTestData(functionView.context, functionView.functionInfo.result.properties.test_data_href)
         );
       })
       .do(() => {
@@ -282,11 +284,8 @@ export class FunctionDevComponent extends FunctionAppContextComponent
             .concatMap(() => this._functionAppService.restartFunctionsHost(this.context))
             .subscribe(() => this._logService.verbose(LogCategories.functionHostRestart, `restart for ${this.context.site.id}`));
         }
-        if (tuple[0].functionInfo.isSuccessful) {
-          const functionInfo = tuple[0].functionInfo.result.properties;
-          this.content = '';
-          this.eventGridSubscribeUrl = tuple[1].result;
-          this.testContent = functionInfo.test_data;
+        if (tuple[5].isSuccessful) {
+          this.testContent = tuple[5].result;
           try {
             const httpModel = JSON.parse(this.testContent);
             // Check if it's valid model
@@ -296,6 +295,11 @@ export class FunctionDevComponent extends FunctionAppContextComponent
           } catch (e) {
             // it's not run http model
           }
+        }
+        if (tuple[0].functionInfo.isSuccessful) {
+          const functionInfo = tuple[0].functionInfo.result.properties;
+          this.content = '';
+          this.eventGridSubscribeUrl = tuple[1].result;
 
           this.fileName = functionInfo.script_href.substring(functionInfo.script_href.lastIndexOf('/') + 1);
           let href = functionInfo.script_href;
@@ -357,7 +361,7 @@ export class FunctionDevComponent extends FunctionAppContextComponent
           this._setFunctionInvokeUrl();
         }
         this.functionAppVersion = tuple[4];
-        this.showErrorsAndWarnings = this.functionAppVersion === FunctionAppVersion.v1;
+        this.showErrorsAndWarnings = runtimeIsV1(this.functionAppVersion);
       });
   }
 
@@ -443,8 +447,9 @@ export class FunctionDevComponent extends FunctionAppContextComponent
   }
 
   ngAfterViewChecked() {
-    if (this.showFunctionInvokeUrlModal) {
+    if (this.showFunctionInvokeUrlModal && this._initialSetFocus) {
       this.selectKeys.nativeElement.focus();
+      this._initialSetFocus = false;
     }
   }
 
@@ -467,11 +472,74 @@ export class FunctionDevComponent extends FunctionAppContextComponent
     }
   }
 
-  private _setFunctionInvokeUrl() {
-    if (this.isHttpFunction && this.functionInfo) {
-      this.functionInvokeUrl = this.functionInfo.invoke_url_template;
+  private _setFunctionInvokeUrl(key?: string) {
+    if (this.isHttpFunction) {
+      // No webhook https://xxx.azurewebsites.net/api/HttpTriggerCSharp1?code=[keyvalue]
+      // WebhookType = "Generic JSON"  https://xxx.azurewebsites.net/api/HttpTriggerCSharp1?code=[keyvalue]&clientId=[keyname]
+      // WebhookType = "GitHub" or "Slack" https://xxx.azurewebsites.net/api/HttpTriggerCSharp1?clientId=[keyname]
+      let code = '';
+      let clientId = '';
+      let queryParams = '';
+
+      // NOTE(michinoy): With existing implementation, the public functionKey is assigned once the component is loaded.
+      // But one could also change the key by selecting the dropdown. This is a currently a safer change instead having to
+      // refactor several areas of this file.
+      const functionKey = key || this.functionKey;
+
+      if (functionKey) {
+        code = functionKey;
+      }
+
+      if (this.webHookType && functionKey) {
+        const allKeys = this.functionKeys.keys.concat(this.hostKeys.functionKeys.keys).concat(this.hostKeys.systemKeys.keys);
+        const keyWithValue = allKeys.find(k => k.value === functionKey);
+        if (keyWithValue) {
+          clientId = keyWithValue.name;
+        }
+
+        if (this.webHookType.toLowerCase() !== WebhookTypes.genericjson) {
+          code = '';
+        }
+      }
+      if (this.authLevel && this.authLevel.toLowerCase() === 'anonymous') {
+        code = null;
+      }
+      if (code) {
+        queryParams = `?code=${code}`;
+      }
+      if (clientId) {
+        queryParams = queryParams ? `${queryParams}&clientId=${clientId}` : `?clientId=${clientId}`;
+      }
+
+      if (runtimeIsV1(this.functionAppVersion)) {
+        this._functionAppService.getHostV1Json(this.context).subscribe(jsonObj => {
+          const result =
+            jsonObj.isSuccessful &&
+            jsonObj.result.http &&
+            jsonObj.result.http.routePrefix !== undefined &&
+            jsonObj.result.http.routePrefix !== null
+              ? jsonObj.result.http.routePrefix
+              : 'api';
+
+          this._updateFunctionInvokeUrl(result, queryParams);
+        });
+      } else {
+        this._functionAppService.getHostV2V3Json(this.context).subscribe(jsonObj => {
+          const result =
+            jsonObj.isSuccessful &&
+            jsonObj.result.extensions &&
+            jsonObj.result.extensions.http &&
+            jsonObj.result.extensions.http.routePrefix !== undefined &&
+            jsonObj.result.extensions.http.routePrefix !== null
+              ? jsonObj.result.extensions.http.routePrefix
+              : 'api';
+
+          this._updateFunctionInvokeUrl(result, queryParams);
+        });
+      }
+    } else {
+      this.runValid = true;
     }
-    this.runValid = true;
   }
 
   saveScript(dontClearBusy?: boolean): Subscription | null {
@@ -550,7 +618,7 @@ export class FunctionDevComponent extends FunctionAppContextComponent
     const test_data = this._getTestData();
     if (this.functionInfo.test_data !== test_data) {
       this.functionInfo.test_data = test_data;
-      this._functionAppService.updateFunction(this.context, this.functionInfo).subscribe(r => {
+      this._functionService.updateFunction(this.context.site.id, this.functionInfo).subscribe(r => {
         Object.assign(this.functionInfo, r);
         if (this.updatedTestContent) {
           this.testContent = this.updatedTestContent;
@@ -650,7 +718,7 @@ export class FunctionDevComponent extends FunctionAppContextComponent
   setShowFunctionInvokeUrlModal(value: boolean) {
     const allKeys = this.functionKeys.keys.concat(this.hostKeys.functionKeys.keys).concat(this.hostKeys.systemKeys.keys);
     if (allKeys.length > 0) {
-      this.onChangeKey();
+      this.onChangeKey(allKeys[0].value);
     }
     this.showFunctionInvokeUrlModal = value;
   }
@@ -662,6 +730,7 @@ export class FunctionDevComponent extends FunctionAppContextComponent
   hideModal() {
     this.showFunctionKeyModal = false;
     this.showFunctionInvokeUrlModal = false;
+    this._initialSetFocus = true;
   }
 
   onDisableTestData(disableTestData: boolean) {
@@ -672,8 +741,8 @@ export class FunctionDevComponent extends FunctionAppContextComponent
     }
   }
 
-  onChangeKey() {
-    this._setFunctionInvokeUrl();
+  onChangeKey(key: string) {
+    this._setFunctionInvokeUrl(key);
     this._setFunctionKey(this.functionInfo);
   }
 
@@ -685,8 +754,9 @@ export class FunctionDevComponent extends FunctionAppContextComponent
           extension: 'Microsoft_Azure_EventGrid',
           detailBladeInputs: {
             inputs: {
-              subscriberEndpointUrl: this.eventGridSubscribeUrl,
               label: `functions-${this.functionInfo.name.toLowerCase()}`,
+              endpointType: 'AzureFunction',
+              endpointResourceId: `${this.context.site.id}/functions/${this.functionInfo.name}`,
             },
           },
         },
@@ -715,6 +785,27 @@ export class FunctionDevComponent extends FunctionAppContextComponent
           break;
       }
     }
+  }
+
+  private _updateFunctionInvokeUrl(result: string, queryParams: string) {
+    const httpTrigger = this.functionInfo.config.bindings.find(b => {
+      return b.type === BindingType.httpTrigger.toString();
+    });
+    if (httpTrigger && httpTrigger.route) {
+      result = result + '/' + httpTrigger.route;
+    } else {
+      result = result + '/' + this.functionInfo.name;
+    }
+
+    // Remove doubled slashes
+    let path = '/' + result;
+    const find = '//';
+    const re = new RegExp(find, 'g');
+    path = path.replace(re, '/');
+    path = path.replace('/?', '?') + queryParams;
+
+    this.functionInvokeUrl = this.context.mainSiteUrl + path;
+    this.runValid = true;
   }
 
   private _getTestData(): string {
@@ -772,8 +863,22 @@ export class FunctionDevComponent extends FunctionAppContextComponent
     ).subscribe(tuple => {
       this.functionKeys = tuple[0].isSuccessful ? tuple[0].result : { keys: [] };
       this.hostKeys = tuple[1].isSuccessful ? tuple[1].result : { masterKey: '', functionKeys: { keys: [] }, systemKeys: { keys: [] } };
-      this.onChangeKey();
+      this._setFirstKey();
       this._setInvokeUrlVisibility();
     });
+  }
+
+  private _setFirstKey() {
+    if (this.authLevel && this.authLevel.toLowerCase() === 'admin') {
+      const masterKey = this.hostKeys.masterKey;
+      if (masterKey) {
+        this.onChangeKey(masterKey);
+      }
+    } else {
+      const allKeys = this.functionKeys.keys.concat(this.hostKeys.functionKeys.keys).concat(this.hostKeys.systemKeys.keys);
+      if (allKeys.length > 0) {
+        this.onChangeKey(allKeys[0].value);
+      }
+    }
   }
 }

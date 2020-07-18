@@ -19,6 +19,8 @@ export interface StatusMessage {
   message: string;
   level: 'error' | 'success' | 'warning' | 'info';
   infoLink?: string;
+  showCheckbox?: boolean;
+  infoLinkAriaLabel?: string;
 }
 
 interface SpecResult {
@@ -48,6 +50,7 @@ export class SpecPickerComponent extends FeatureComponent<TreeViewInfo<SpecPicke
   isUpdating = false;
   shieldEnabled = false;
   disableUpdates = false;
+  isStatusMessageCheckboxSelected: boolean;
 
   private _input: SpecPickerInput<PlanSpecPickerData>;
 
@@ -63,6 +66,8 @@ export class SpecPickerComponent extends FeatureComponent<TreeViewInfo<SpecPicke
     ) {
       return false;
     } else if (this.isUpdating || this.isInitializing || this.disableUpdates) {
+      return false;
+    } else if (this.statusMessage && this.statusMessage.showCheckbox && !this.isStatusMessageCheckboxSelected) {
       return false;
     } else {
       return true;

@@ -1,15 +1,17 @@
+import { ArmSku, ArmObj } from './../../../../../models/arm-obj';
 import { CommonConstants } from '../../../../../utils/CommonConstants';
 import { ServerFarmSkuConstants } from '../../../../../utils/scenario-checker/ServerFarmSku';
 import { AppKind } from '../../../../../utils/AppKind';
 import { PlanSpecPickerData, SpecColorCodes } from '../PriceSpec';
 import { style } from 'typestyle';
 import { DV2SeriesPriceSpec } from '../DV2SeriesPriceSpec';
-import { ArmObj, Sku, ServerFarm } from '../../../../../models/WebAppModels';
 import i18next from 'i18next';
+import { ServerFarm } from '../../../../../models/serverFarm/serverfarm';
+import { Links } from '../../../../../utils/FwLinks';
 
 export abstract class PremiumV2PlanPriceSpec extends DV2SeriesPriceSpec {
   constructor(t: i18next.TFunction) {
-    super(t, ServerFarmSkuConstants.Tier.premiumV2, t('pricing_pv2NotAvailable'), CommonConstants.Links.premiumV2NotAvailableLearnMore);
+    super(t, ServerFarmSkuConstants.Tier.premiumV2, t('pricing_pv2NotAvailable'), Links.premiumV2NotAvailableLearnMore);
     this.tier = ServerFarmSkuConstants.Tier.premiumV2;
     this.featureItems = [
       {
@@ -50,7 +52,7 @@ export abstract class PremiumV2PlanPriceSpec extends DV2SeriesPriceSpec {
         iconUrl: 'image/app-service-plan.svg',
         title: t('pricing_includedHardware_azureComputeUnits'),
         description: t('pricing_computeDedicatedAcu'),
-        learnMoreUrl: CommonConstants.Links.azureComputeUnitLearnMore,
+        learnMoreUrl: Links.azureComputeUnitLearnMore,
       },
       {
         id: 'memory',
@@ -71,17 +73,17 @@ export abstract class PremiumV2PlanPriceSpec extends DV2SeriesPriceSpec {
     });
   }
 
-  protected _matchSku(sku: Sku): boolean {
+  protected _matchSku(sku: ArmSku): boolean {
     return sku.name.indexOf('v2') > -1;
   }
 
   protected _shouldHideForNewPlan(data: PlanSpecPickerData): boolean {
-    return !!data.hostingEnvironmentName || data.isXenon || !!data.isElastic;
+    return !!data.hostingEnvironmentName || data.isXenon || data.hyperV || (!!data.isNewFunctionAppCreate && !!data.isElastic);
   }
 
   protected _shouldHideForExistingPlan(plan: ArmObj<ServerFarm>): boolean {
     return (
-      !!plan.properties.hostingEnvironmentProfile || plan.properties.isXenon || AppKind.hasAnyKind(plan, [CommonConstants.Kinds.elastic])
+      !!plan.properties.hostingEnvironmentProfile || plan.properties.hyperV || AppKind.hasAnyKind(plan, [CommonConstants.Kinds.elastic])
     );
   }
 }

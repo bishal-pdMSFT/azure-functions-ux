@@ -5,7 +5,8 @@ import { ConfigService } from 'app/shared/services/config.service';
 import { PortalService } from './services/portal.service';
 import { Injector } from '@angular/core';
 import { ArmObj } from 'app/shared/models/arm/arm-obj';
-import { Site } from 'app/shared/models/arm/site';
+import { Site, HostType } from 'app/shared/models/arm/site';
+import { runtimeIsV2, runtimeIsV3 } from './models/functions-version-info';
 
 export class UrlTemplates {
   private configService: ConfigService;
@@ -13,8 +14,8 @@ export class UrlTemplates {
   private armService: ArmService;
   private scmUrl: string;
   private mainSiteUrl: string;
-  private useNewUrls: boolean;
   private isEmbeddedFunctions: boolean;
+  public runtimeVersion: string;
 
   constructor(private site: ArmObj<Site>, injector: Injector) {
     this.portalService = injector.get(PortalService);
@@ -24,8 +25,10 @@ export class UrlTemplates {
     this.isEmbeddedFunctions = this.portalService.isEmbeddedFunctions;
     this.scmUrl = this.isEmbeddedFunctions ? null : this.getScmUrl();
     this.mainSiteUrl = this.isEmbeddedFunctions ? null : this.getMainUrl();
+  }
 
-    this.useNewUrls = ArmUtil.isLinuxApp(this.site);
+  get useNewUrls(): boolean {
+    return runtimeIsV2(this.runtimeVersion) || runtimeIsV3(this.runtimeVersion);
   }
 
   public getScmUrl() {
@@ -34,7 +37,8 @@ export class UrlTemplates {
     } else if (this.isEmbeddedFunctions) {
       return null;
     } else {
-      const scmHostName = this.site.properties.hostNameSslStates && this.site.properties.hostNameSslStates.find(s => s.hostType === 1);
+      const scmHostName =
+        this.site.properties.hostNameSslStates && this.site.properties.hostNameSslStates.find(s => s.hostType === HostType.Repository);
       return scmHostName ? `https://${scmHostName.name}` : this.getMainUrl();
     }
   }
@@ -60,17 +64,22 @@ export class UrlTemplates {
           .filter(part => !!part)
           .slice(0, 4)
           .join('/');
-        return `${ArmEmbeddedService.url}/${smallerSiteId}/functions?api-version=${this.armService.websiteApiVersion}`;
+        return `${ArmEmbeddedService.url}/${smallerSiteId}/functions?api-version=${this.armService.antaresApiVersion20181101}`;
       }
       // url to get all functions for the entity
-      return `${ArmEmbeddedService.url}${this.site.id}/functions?api-version=${this.armService.websiteApiVersion}`;
+      return `${ArmEmbeddedService.url}${this.site.id}/functions?api-version=${this.armService.antaresApiVersion20181101}`;
     }
 
     return this.useNewUrls ? `${this.mainSiteUrl}/admin/functions` : `${this.scmUrl}/api/functions`;
   }
 
   get proxiesJsonUrl(): string {
-    return this.useNewUrls ? `${this.mainSiteUrl}/admin/vfs/site/wwwroot/proxies.json` : `${this.scmUrl}/api/vfs/site/wwwroot/proxies.json`;
+    if (this.useNewUrls) {
+      return ArmUtil.isLinuxApp(this.site)
+        ? `${this.mainSiteUrl}/admin/vfs/home/site/wwwroot/proxies.json`
+        : `${this.mainSiteUrl}/admin/vfs/site/wwwroot/proxies.json`;
+    }
+    return `${this.scmUrl}/api/vfs/site/wwwroot/proxies.json`;
   }
 
   getFunctionUrl(functionName: string, functionEntity?: string): string {
@@ -82,10 +91,10 @@ export class UrlTemplates {
           .slice(0, 6)
           .join('/');
         return `${ArmEmbeddedService.url}/${smallerSiteId}/entities/${functionEntity}/functions/${functionName}?api-version=${
-          this.armService.websiteApiVersion
+          this.armService.antaresApiVersion20181101
         }`;
       }
-      return `${ArmEmbeddedService.url}${this.site.id}/functions/${functionName}?api-version=${this.armService.websiteApiVersion}`;
+      return `${ArmEmbeddedService.url}${this.site.id}/functions/${functionName}?api-version=${this.armService.antaresApiVersion20181101}`;
     }
 
     return this.useNewUrls ? `${this.mainSiteUrl}/admin/functions/${functionName}` : `${this.scmUrl}/api/functions/${functionName}`;
@@ -104,7 +113,12 @@ export class UrlTemplates {
   }
 
   get hostJsonUrl(): string {
-    return this.useNewUrls ? `${this.mainSiteUrl}/admin/vfs/home/site/wwwroot/host.json` : `${this.scmUrl}/api/functions/config`;
+    if (this.useNewUrls) {
+      return ArmUtil.isLinuxApp(this.site)
+        ? `${this.mainSiteUrl}/admin/vfs/home/site/wwwroot/host.json`
+        : `${this.mainSiteUrl}/admin/vfs/site/wwwroot/host.json`;
+    }
+    return `${this.scmUrl}/api/functions/config`;
   }
 
   get scmTokenUrl(): string {

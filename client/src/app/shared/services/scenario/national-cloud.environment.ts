@@ -1,8 +1,9 @@
-import { NationalCloudArmUris, ScenarioIds } from './../../models/constants';
+import { NationalCloudArmUris, ScenarioIds, FeatureFlags } from './../../models/constants';
 import { AzureEnvironment } from './azure.environment';
 import { ScenarioCheckInput, ScenarioResult } from './scenario.models';
 import { Injector } from '@angular/core';
 import { Observable } from 'rxjs/Observable';
+import { Url } from 'app/shared/Utilities/url';
 
 export class NationalCloudEnvironment extends AzureEnvironment {
   name = 'NationalCloud';
@@ -24,8 +25,17 @@ export class NationalCloudEnvironment extends AzureEnvironment {
     return window.appsvc.env.azureResourceManagerEndpoint.toLowerCase() === NationalCloudArmUris.blackforest.toLowerCase();
   }
 
+  public static isUSNat() {
+    return window.appsvc.env.azureResourceManagerEndpoint.toLowerCase() === NationalCloudArmUris.usNat.toLowerCase();
+  }
+
+  public static isUSSec() {
+    return window.appsvc.env.azureResourceManagerEndpoint.toLowerCase() === NationalCloudArmUris.usSec.toLowerCase();
+  }
+
   constructor(injector: Injector) {
     super(injector);
+
     this.scenarioChecks[ScenarioIds.addResourceExplorer] = {
       id: ScenarioIds.addResourceExplorer,
       runCheck: () => {
@@ -57,10 +67,21 @@ export class NationalCloudEnvironment extends AzureEnvironment {
     this.scenarioChecks[ScenarioIds.appInsightsConfigurable] = {
       id: ScenarioIds.appInsightsConfigurable,
       runCheckAsync: (input: ScenarioCheckInput) => {
-        return Observable.of<ScenarioResult>({
-          status: 'disabled',
-          data: null,
-        });
+        if (
+          NationalCloudEnvironment.isFairFax() ||
+          NationalCloudEnvironment.isMooncake() ||
+          NationalCloudEnvironment.isBlackforest() ||
+          NationalCloudEnvironment.isUSNat() ||
+          NationalCloudEnvironment.isUSSec() ||
+          !Url.getFeatureValue(FeatureFlags.EnableAIOnNationalCloud)
+        ) {
+          return Observable.of<ScenarioResult>({
+            status: 'disabled',
+            data: null,
+          });
+        } else {
+          return this._getApplicationInsightsId(input);
+        }
       },
     };
 
@@ -137,13 +158,6 @@ export class NationalCloudEnvironment extends AzureEnvironment {
         return { status: 'disabled' };
       },
     };
-
-    // this.scenarioChecks[ScenarioIds.configureAADSupported] = {
-    //   id: ScenarioIds.configureAADSupported,
-    //   runCheck: () => {
-    //     return { status: 'disabled' };
-    //   },
-    // };
 
     this.scenarioChecks[ScenarioIds.configureAADSupported] = {
       id: ScenarioIds.configureAADSupported,

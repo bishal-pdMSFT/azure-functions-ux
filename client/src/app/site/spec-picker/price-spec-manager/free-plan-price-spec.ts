@@ -1,6 +1,6 @@
 import { Injector } from '@angular/core';
 import { Observable } from 'rxjs/Observable';
-import { Kinds, Links } from './../../../shared/models/constants';
+import { Kinds, Pricing } from './../../../shared/models/constants';
 import { Tier, SkuCode } from './../../../shared/models/serverFarmSku';
 import { PortalResources } from './../../../shared/models/portal-resources';
 import { AppKind } from './../../../shared/Utilities/app-kind';
@@ -22,12 +22,6 @@ export class FreePlanPriceSpec extends PriceSpec {
 
   hardwareItems = [
     {
-      iconUrl: 'image/app-service-plan.svg',
-      title: this._ts.instant(PortalResources.pricing_includedHardware_azureComputeUnits),
-      description: this._ts.instant(PortalResources.pricing_computeDedicatedAcu),
-      learnMoreUrl: Links.azureComputeUnitLearnMore,
-    },
-    {
       iconUrl: 'image/website-power.svg',
       title: this._ts.instant(PortalResources.memory),
       description: this._ts.instant(PortalResources.pricing_sharedMemory),
@@ -45,7 +39,8 @@ export class FreePlanPriceSpec extends PriceSpec {
     id: this.skuCode,
     firstParty: [
       {
-        quantity: 744,
+        id: this.skuCode,
+        quantity: Pricing.hoursInAzureMonth,
         resourceId: null,
       },
     ],
@@ -72,7 +67,7 @@ export class FreePlanPriceSpec extends PriceSpec {
 
       if (
         input.plan.properties.hostingEnvironmentProfile ||
-        input.plan.properties.isXenon ||
+        input.plan.properties.hyperV ||
         AppKind.hasAnyKind(input.plan, [Kinds.elastic])
       ) {
         this.state = 'hidden';
@@ -87,7 +82,12 @@ export class FreePlanPriceSpec extends PriceSpec {
         this.topLevelFeatures.shift();
       }
 
-      if (input.specPickerInput.data.hostingEnvironmentName || input.specPickerInput.data.isXenon) {
+      if (
+        input.specPickerInput.data.hostingEnvironmentName ||
+        input.specPickerInput.data.isXenon ||
+        input.specPickerInput.data.hyperV ||
+        (input.specPickerInput.data.isNewFunctionAppCreate && input.specPickerInput.data.isElastic)
+      ) {
         this.state = 'hidden';
       }
 

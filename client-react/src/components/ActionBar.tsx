@@ -8,8 +8,9 @@ import { style } from 'typestyle';
 import { ThemeExtended } from '../theme/SemanticColorsExtended';
 import { SpinnerSize, Spinner } from 'office-ui-fabric-react/lib/Spinner';
 import { ThemeContext } from '../ThemeContext';
+import { Overlay } from 'office-ui-fabric-react';
 
-interface StatusMessage {
+export interface StatusMessage {
   message: string;
   level: MessageBarType;
   infoLink?: string;
@@ -27,6 +28,7 @@ interface ActionBarProps {
   secondaryButton?: ActionBarButtonProps;
   statusMessage?: StatusMessage;
   validating?: boolean;
+  overlay?: boolean;
 }
 
 const elementWrapperStyle = (theme: ThemeExtended) =>
@@ -39,18 +41,39 @@ const elementWrapperStyle = (theme: ThemeExtended) =>
     overflow: 'hidden',
     borderTop: `1px solid ${theme.palette.neutralDark}`,
     zIndex: 1,
+    background: theme.semanticColors.bodyFrameBackground,
   });
 
-const buttonsWrapperStyle = style({
+export const buttonsWrapperStyle = style({
   display: 'inline-block',
   verticalAlign: 'top',
   paddingTop: '10px',
 });
 
-const buttonStyle = style({
-  marginLeft: '16px',
-  marginTop: '2px',
-});
+export const buttonStyle = (theme: ThemeExtended, isPrimary: boolean) =>
+  style({
+    marginLeft: '16px',
+    marginTop: '2px',
+    $nest: {
+      '&:focus': {
+        $nest: {
+          '&::after': {
+            top: '1px !important',
+            right: '1px !important',
+            bottom: '1px !important',
+            left: '1px !important',
+            borderStyle: 'dotted !important',
+            borderColor: `${
+              isPrimary ? theme.semanticColors.primaryButtonBorderFocused : theme.semanticColors.buttonBorderFocused
+            } !important`,
+            outlineStyle: 'dotted !important',
+            outlineColor: `${theme.semanticColors.buttonOutlineFocused} !important`,
+            outlineOffset: '1px !important',
+          },
+        },
+      },
+    },
+  });
 
 const statusMessageDiv = style({
   display: 'inline-block',
@@ -58,7 +81,7 @@ const statusMessageDiv = style({
 });
 
 type ActionBarPropsCombined = ActionBarProps;
-const ActionBar: React.FC<ActionBarPropsCombined> = ({ primaryButton, secondaryButton, validating, id, statusMessage }) => {
+const ActionBar: React.FC<ActionBarPropsCombined> = ({ primaryButton, secondaryButton, validating, id, statusMessage, overlay }) => {
   const theme = useContext(ThemeContext);
   const { t } = useTranslation();
   return (
@@ -66,7 +89,7 @@ const ActionBar: React.FC<ActionBarPropsCombined> = ({ primaryButton, secondaryB
       <div className={buttonsWrapperStyle}>
         <PrimaryButton
           id={`${id}-${primaryButton.id}`}
-          className={buttonStyle}
+          className={buttonStyle(theme, true)}
           onClick={primaryButton.onClick}
           disabled={primaryButton.disable}>
           {t(primaryButton.title)}
@@ -74,10 +97,10 @@ const ActionBar: React.FC<ActionBarPropsCombined> = ({ primaryButton, secondaryB
         {secondaryButton && (
           <DefaultButton
             id={`${id}-${secondaryButton.id}`}
-            className={buttonStyle}
+            className={buttonStyle(theme, false)}
             onClick={secondaryButton.onClick}
             disabled={secondaryButton.disable}>
-            {t('cancel')}
+            {secondaryButton.title}
           </DefaultButton>
         )}
       </div>
@@ -122,6 +145,7 @@ const ActionBar: React.FC<ActionBarPropsCombined> = ({ primaryButton, secondaryB
           />
         )}
       </div>
+      {overlay && <Overlay />}
     </div>
   );
 };

@@ -3,11 +3,13 @@ import { Dropdown as OfficeDropdown, IDropdownProps, IDropdownOption, Stack } fr
 import { dropdownStyleOverrides } from '../../../components/form-controls/formControl.override.styles';
 import { ThemeContext } from '../../../ThemeContext';
 import { useWindowSize } from 'react-use';
-import { ArmObj, ServerFarm, HostingEnvironment } from '../../../models/WebAppModels';
 import { ResourceGroupInfo } from './CreateOrSelectResourceGroup';
 import { CreatePlan } from './CreatePlan';
 import { useTranslation } from 'react-i18next';
 import i18next from 'i18next';
+import { ArmObj } from '../../../models/arm-obj';
+import { ServerFarm } from '../../../models/serverFarm/serverfarm';
+import { HostingEnvironment } from '../../../models/hostingEnvironment/hosting-environment';
 
 export const NEW_PLAN = '__NEWPLAN__';
 
@@ -80,7 +82,7 @@ export const CreateOrSelectPlan = (props: CreateOrSelectPlanFormValues & CreateO
           selectedKey={planInfo.isNewPlan ? planInfo.newPlanInfo.name : (planInfo.existingPlan as ArmObj<ServerFarm>).id.toLowerCase()}
           options={options}
           onChange={onChangeDropdown}
-          styles={dropdownStyleOverrides(false, theme, fullpage, '450px')}
+          styles={dropdownStyleOverrides(theme, fullpage, '450px')}
           ariaLabel={t('appServicePlan')}
         />
         <CreatePlan

@@ -4,10 +4,12 @@ import { AppKind } from '../../../../../utils/AppKind';
 import { PriceSpec, PriceSpecInput, SpecColorCodes } from '../PriceSpec';
 import { NationalCloudEnvironment } from '../../../../../utils/scenario-checker/national-cloud.environment';
 import { style } from 'typestyle';
-import { ArmObj, HostingEnvironment } from '../../../../../models/WebAppModels';
 import { HttpResult } from '../../../../../models/HttpResult';
 import MakeArmCall from '../../../../../ApiHelpers/ArmHelper';
 import i18next from 'i18next';
+import { ArmObj } from '../../../../../models/arm-obj';
+import { HostingEnvironment } from '../../../../../models/hostingEnvironment/hosting-environment';
+import { Links } from '../../../../../utils/FwLinks';
 
 export abstract class IsolatedPlanPriceSpec extends PriceSpec {
   constructor(t: i18next.TFunction) {
@@ -52,7 +54,7 @@ export abstract class IsolatedPlanPriceSpec extends PriceSpec {
         iconUrl: 'image/app-service-plan.svg',
         title: t('pricing_includedHardware_azureComputeUnits'),
         description: t('pricing_computeDedicatedAcu'),
-        learnMoreUrl: CommonConstants.Links.azureComputeUnitLearnMore,
+        learnMoreUrl: Links.azureComputeUnitLearnMore,
       },
       {
         id: 'memory',
@@ -74,12 +76,12 @@ export abstract class IsolatedPlanPriceSpec extends PriceSpec {
   }
 
   public async runInitialization(input: PriceSpecInput): Promise<void> {
-    if (NationalCloudEnvironment.isBlackforest() || NationalCloudEnvironment.isMooncake()) {
+    if (NationalCloudEnvironment.isBlackforest()) {
       this.state = 'hidden';
     } else if (input.plan) {
       if (
         !input.plan.properties.hostingEnvironmentProfile ||
-        input.plan.properties.isXenon ||
+        input.plan.properties.hyperV ||
         AppKind.hasAnyKind(input.plan, [CommonConstants.Kinds.elastic])
       ) {
         this.state = 'hidden';
@@ -87,27 +89,31 @@ export abstract class IsolatedPlanPriceSpec extends PriceSpec {
         const hostingEnvironmentFetch = await MakeArmCall<{ value: HttpResult<ArmObj<HostingEnvironment>> }>({
           resourceId: input.plan.properties.hostingEnvironmentProfile.id,
           commandName: 'IsolatedPlanPriceSpec',
-          apiVersion: CommonConstants.ApiVersions.websiteApiVersion20181101,
+          apiVersion: CommonConstants.ApiVersions.antaresApiVersion20181101,
         });
 
         const result = hostingEnvironmentFetch;
 
-        // If the call to get the ASE fails (maybe due to RBAC), then we can't confirm ASE v1 or v2
+        // If the call to get the ASE fails (maybe due to RBAC), then we can't confirm ASE v1 or v2 or v3
         // but we'll let them see the isolated card anyway.  The plan update will probably fail in
-        // the back-end if it's ASE v1, but at least we allow real ASE v2 customers who don't have
+        // the back-end if it's ASE v1, but at least we allow real ASE v2/v3 customers who don't have
         // ASE permissions to scale their plan.
         if (
           result.data.value.isSuccessful &&
           result.data.value.result &&
           result.data.value.result.kind &&
-          result.data.value.result.kind.toLowerCase().indexOf(CommonConstants.Kinds.aseV2.toLowerCase()) === -1
+          result.data.value.result.kind.toLowerCase().indexOf(CommonConstants.Kinds.aseV2.toLowerCase()) === -1 &&
+          result.data.value.result.kind.toLowerCase().indexOf(CommonConstants.Kinds.aseV3.toLowerCase()) === -1
         ) {
           this.state = 'hidden';
         }
       }
     } else if (
       input.specPickerInput.data &&
-      (!input.specPickerInput.data.allowAseV2Creation || input.specPickerInput.data.isXenon || input.specPickerInput.data.isElastic)
+      (!input.specPickerInput.data.allowAseV2Creation ||
+        input.specPickerInput.data.isXenon ||
+        input.specPickerInput.data.hyperV ||
+        (input.specPickerInput.data.isNewFunctionAppCreate && input.specPickerInput.data.isElastic))
     ) {
       this.state = 'hidden';
     }

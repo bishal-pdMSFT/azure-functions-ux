@@ -39,10 +39,34 @@ export class FunctionAppEnvironment extends Environment {
         return { status: 'enabled' };
       },
     };
+
     this.scenarioChecks[ScenarioIds.skipStackValidation] = {
       id: ScenarioIds.skipStackValidation,
       runCheck: () => {
         return { status: 'disabled' };
+      },
+    };
+
+    this.scenarioChecks[ScenarioIds.functionAppRuntimeStack] = {
+      id: ScenarioIds.functionAppRuntimeStack,
+      runCheck: () => {
+        return { status: 'disabled' };
+      },
+    };
+
+    this.scenarioChecks[ScenarioIds.linuxAppRuntime] = {
+      id: ScenarioIds.linuxAppRuntime,
+      runCheck: () => {
+        return {
+          status: 'disabled',
+        };
+      },
+    };
+
+    this.scenarioChecks[ScenarioIds.showFunctionRuntimeSettings] = {
+      id: ScenarioIds.showFunctionRuntimeSettings,
+      runCheck: () => {
+        return { status: 'enabled' };
       },
     };
   }

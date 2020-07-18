@@ -11,6 +11,10 @@ import { useTranslation } from 'react-i18next';
 import { StorageAccountsContext, SiteContext } from '../Contexts';
 import { ScenarioService } from '../../../../utils/scenario-checker/scenario.service';
 import { ScenarioIds } from '../../../../utils/scenario-checker/scenario-ids';
+import { MessageBarType } from 'office-ui-fabric-react';
+import { StorageType } from '../../../../models/site/config';
+import CustomBanner from '../../../../components/CustomBanner/CustomBanner';
+import { Links } from '../../../../utils/FwLinks';
 
 const storageKinds = {
   StorageV2: 'StorageV2',
@@ -34,10 +38,21 @@ const AzureStorageMountsAddEditBasic: React.FC<FormikProps<FormAzureStorageMount
     .filter(val => supportsBlobStorage || val.kind !== storageKinds.BlobStorage)
     .map(val => ({ key: val.name, text: val.name }));
 
-  const setAccessKey = (accessKey: string) => {
-    setValues({ ...values, accessKey });
+  const validateStorageContainer = (value: string): string | undefined => {
+    if (
+      sharesLoading ||
+      (value && values.type === 'AzureBlob'
+        ? blobContainerOptions.find(x => x.key === value)
+        : filesContainerOptions.find(x => x.key === value))
+    ) {
+      return undefined;
+    }
+
+    return t('validation_requiredError');
   };
+
   const storageAccount = storageAccounts.value.find(x => x.name === values.accountName);
+
   useEffect(() => {
     setAccountError('');
     if (storageAccount) {
@@ -46,6 +61,10 @@ const AzureStorageMountsAddEditBasic: React.FC<FormikProps<FormAzureStorageMount
       setSharesLoading(true);
       MakeArmCall({ resourceId: `${storageAccount.id}/listKeys`, commandName: 'listStorageKeys', method: 'POST' })
         .then(async ({ data }: any) => {
+          const setAccessKey = (accessKey: string) => {
+            setValues({ ...values, accessKey });
+          };
+
           setAccessKey(data.keys[0].value);
           const payload = {
             accountName: values.accountName,
@@ -91,15 +110,19 @@ const AzureStorageMountsAddEditBasic: React.FC<FormikProps<FormAzureStorageMount
             setAccountError(t('noWriteAccessStorageAccount'));
           }
         })
-        .catch(err => {
+        .catch(() => {
           setAccountError(t('noWriteAccessStorageAccount'));
         });
     }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values.accountName]);
+
   const blobContainerOptions = accountSharesBlob.map((x: any) => ({ key: x.name, text: x.name }));
   const filesContainerOptions = accountSharesFiles.map((x: any) => ({ key: x.name, text: x.name }));
 
   const showStorageTypeOption = supportsBlobStorage && (!storageAccount || storageAccount.kind !== storageKinds.BlobStorage);
+
   return (
     <>
       <Field
@@ -116,7 +139,7 @@ const AzureStorageMountsAddEditBasic: React.FC<FormikProps<FormAzureStorageMount
         errorMessage={errors.accountName}
         validate={() => {
           if (accountError) {
-            throw accountError;
+            return accountError;
           }
         }}
       />
@@ -140,6 +163,15 @@ const AzureStorageMountsAddEditBasic: React.FC<FormikProps<FormAzureStorageMount
           ]}
         />
       )}
+      {values.type === StorageType.azureBlob && (
+        <CustomBanner
+          id="azure-storage-mount-blob-warning"
+          message={t('readonlyBlobStorageWarning')}
+          learnMoreLink={Links.byosBlobReadonlyLearnMore}
+          type={MessageBarType.warning}
+          undocked={true}
+        />
+      )}
       <Field
         component={ComboBox}
         name="shareName"
@@ -151,18 +183,8 @@ const AzureStorageMountsAddEditBasic: React.FC<FormikProps<FormAzureStorageMount
         styles={{
           root: formElementStyle,
         }}
-        validate={val => {
-          if (sharesLoading) {
-            return;
-          }
-          if (!val) {
-            throw t('required');
-          }
-          const foundVal =
-            values.type === 'AzureBlob' ? blobContainerOptions.find(x => x.key === val) : filesContainerOptions.find(x => x.key === val);
-          if (!foundVal) {
-            throw t('required');
-          }
+        validate={(value: any) => {
+          return validateStorageContainer(value);
         }}
         errorMessage={errors.shareName}
       />

@@ -52,6 +52,9 @@ export class ContainerSettingsManager {
   urlValidator: URLValidator;
   yamlValidator: YAMLValidator;
 
+  // NOTE(michinoy): This is temporarily added while we gracefully deprecate kubernetes.
+  private _containerSettingsData: ContainerSettingsData;
+
   constructor(
     private _injector: Injector,
     private _ts: TranslateService,
@@ -377,6 +380,13 @@ export class ContainerSettingsManager {
         siteConfig.properties.linuxFxVersion = null;
         siteConfig.properties.windowsFxVersion = null;
 
+        // The user may have VNET security restrictions enabled. If so, then including "ipSecurityRestrictions" or "scmIpSecurityRestrictions" in the payload for
+        // the config/web API means that the call will require joinViaServiceEndpoint/action permissions on the given subnet(s) referenced in the security restrictions.
+        // If the user doesn't have these permissions, the config/web API call will fail. (This is true even if these properties are just being round-tripped.)
+        // Since this UI doesn't allow modifying these properties, we can just remove them from the config object to avoid the unnecessary permissions requirement.
+        delete siteConfig.properties.ipSecurityRestrictions;
+        delete siteConfig.properties.scmIpSecurityRestrictions;
+
         if (os === 'linux') {
           siteConfig.properties.linuxFxVersion = formData.siteConfig.fxVersion;
         } else {
@@ -420,10 +430,10 @@ export class ContainerSettingsManager {
   }
 
   private _resetContainers(containerSettingInfo: ContainerSettingsData) {
+    this._containerSettingsData = containerSettingInfo;
     this.containers = [
       new SingleContainer(this._injector, containerSettingInfo),
       new DockerComposeContainer(this._injector, containerSettingInfo),
-      new KubernetesContainer(this._injector, containerSettingInfo),
     ];
   }
 
@@ -487,6 +497,12 @@ export class ContainerSettingsManager {
     siteConfig: ContainerSiteConfig,
     publishingCredentials: PublishingCredentials
   ) {
+    // NOTE(michinoy): Only add the Kubernetes tab for container configuration if it is already set
+    // else do not show. This is a graceful way of deprecating the kubernetes support.
+    if (siteConfig && siteConfig.linuxFxVersion && this._getFormContainerType(siteConfig.linuxFxVersion) === 'kubernetes') {
+      this.containers.push(new KubernetesContainer(this._injector, this._containerSettingsData));
+    }
+
     this.webhookUrl = this._getFormWebhookUrl(publishingCredentials);
 
     let fxVersion;

@@ -70,7 +70,6 @@ export class ScenarioIds {
   public static readonly enableExportToPowerApps = 'EnableExportToPowerApps';
   public static readonly disabledBindings = 'disabledBindings';
   public static readonly monitoring = 'monitoring';
-  public static readonly addFTPOptions = 'addFTPOptions';
   public static readonly addHTTPSwitch = 'addHTTPSwitch';
   public static readonly vstsDeploymentHide = 'vstsDeploymentHide';
   public static readonly vstsDeploymentPermission = 'vstsDeploymentPermission';
@@ -101,4 +100,12 @@ export class ScenarioIds {
   public static readonly incomingClientCertEnabled = 'incomingClientCertEnabled';
   public static readonly showConnnectionStringFunctionInfo = 'showConnnectionStringFunctionInfo';
   public static readonly azureBlobMount = 'azureBlobMount';
+  public static readonly showGeneralSettings = 'showGeneralSettings';
+  public static readonly isAppDensityEnabled = 'isAppDensityEnabled';
+  public static readonly functionAppRuntimeStack = 'functionAppRuntimeStack';
+  public static readonly showFunctionRuntimeSettings = 'showFunctionRuntimeSettings';
+  public static readonly dailyUsageQuotaSupported = 'dailyUsageQuotaSupported';
+  public static readonly runtimeScaleMonitoringSupported = 'runtimeScaleMonitoringSupported';
+  public static readonly xenonAppRuntimeStack = 'xenonAppRuntimeStack';
+  public static readonly showAppInsightsLogs = 'showAppInsightsLogs';
 }

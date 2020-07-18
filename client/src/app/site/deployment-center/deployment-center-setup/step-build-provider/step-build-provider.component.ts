@@ -3,12 +3,14 @@ import { DeploymentCenterStateManager } from 'app/site/deployment-center/deploym
 import { TranslateService } from '@ngx-translate/core';
 import { PortalResources } from '../../../../shared/models/portal-resources';
 import { ProviderCard } from '../../Models/provider-card';
-import { ScenarioIds, KeyCodes } from '../../../../shared/models/constants';
+import { ScenarioIds, KeyCodes, LogCategories } from '../../../../shared/models/constants';
 import { from } from 'rxjs/observable/from';
 import { ScenarioService } from '../../../../shared/services/scenario/scenario.service';
 import { forkJoin } from 'rxjs/observable/forkJoin';
 import { of } from 'rxjs/observable/of';
 import { Subject } from 'rxjs/Subject';
+import { sourceControlProvider } from '../wizard-logic/deployment-center-setup-models';
+import { LogService } from '../../../../shared/services/log.service';
 @Component({
   selector: 'app-step-build-provider',
   templateUrl: './step-build-provider.component.html',
@@ -26,6 +28,16 @@ export class StepBuildProviderComponent implements OnDestroy {
       enabled: true,
     },
     {
+      id: 'github',
+      name: this._translateService.instant(PortalResources.gitHubActionBuildServerTitle),
+      icon: 'image/deployment-center/GitHubLogo.svg',
+      color: '#68217A',
+      description: this._translateService.instant(PortalResources.gitHubActionBuildServerDesc),
+      authorizedStatus: 'none',
+      enabled: true,
+      hidden: true,
+    },
+    {
       id: 'vsts',
       name: `${this._translateService.instant(PortalResources.vstsBuildServerTitle)}`,
       icon: 'image/deployment-center/AzurePipelines.svg',
@@ -38,12 +50,13 @@ export class StepBuildProviderComponent implements OnDestroy {
   ];
 
   private _vstsKuduSourceScenarioBlocked = false;
-  private _currentSourceControlProvider: string;
+  private _currentSourceControlProvider: sourceControlProvider;
   private _ngUnsubscribe = new Subject();
   constructor(
     public wizard: DeploymentCenterStateManager,
     private _translateService: TranslateService,
-    private _scenarioService: ScenarioService
+    private _scenarioService: ScenarioService,
+    private _logService: LogService
   ) {
     // runs scenario checker for each provider to determine if it should be enabled or not
     // if not enabled then it pulls error message from scenario checker
@@ -59,14 +72,25 @@ export class StepBuildProviderComponent implements OnDestroy {
       })
       .subscribe(([provider, scenarioCheck]) => {
         if (provider) {
-          provider.enabled = scenarioCheck.status !== 'disabled';
+          provider.enabled = !!scenarioCheck.status && scenarioCheck.status !== 'disabled';
           provider.errorMessage = scenarioCheck.data && scenarioCheck.data.errorMessage;
         }
       });
 
+    wizard.gitHubTokenUpdated$.subscribe(_ => {
+      const githubActionCard = this.providerCards.find(x => x.id === 'github');
+      if (githubActionCard && !githubActionCard.hidden) {
+        githubActionCard.enabled = this.wizard.isGithubActionWorkflowScopeAvailable;
+        githubActionCard.errorMessage = !this.wizard.isGithubActionWorkflowScopeAvailable
+          ? this._translateService.instant(PortalResources.githubActionWorkflowScopeMissing)
+          : '';
+      }
+    });
+
     this.wizard.wizardForm.controls.sourceProvider.valueChanges.takeUntil(this._ngUnsubscribe).subscribe(provider => {
       if (provider !== this._currentSourceControlProvider) {
         this._currentSourceControlProvider = provider;
+
         const kuduCard = this.providerCards.find(x => x.id === 'kudu');
         if (provider === 'vsts' && this._vstsKuduSourceScenarioBlocked) {
           this.chooseBuildProvider({ id: 'vsts', enabled: true } as ProviderCard);
@@ -75,6 +99,16 @@ export class StepBuildProviderComponent implements OnDestroy {
           this.chooseBuildProvider({ id: 'kudu', enabled: true } as ProviderCard);
           kuduCard.hidden = false;
         }
+
+        const enableGitHubAction =
+          this._scenarioService.checkScenario(ScenarioIds.enableGitHubAction, { site: wizard.siteArm }).status === 'enabled';
+
+        const githubActionCard = this.providerCards.find(x => x.id === 'github');
+        githubActionCard.hidden = this._currentSourceControlProvider !== 'github' || !enableGitHubAction;
+        githubActionCard.enabled = this.wizard.isGithubActionWorkflowScopeAvailable;
+        githubActionCard.errorMessage = !this.wizard.isGithubActionWorkflowScopeAvailable
+          ? this._translateService.instant(PortalResources.githubActionWorkflowScopeMissing)
+          : '';
       }
     });
     // this says if kudu should be hidden then default to vsts instead
@@ -92,6 +126,8 @@ export class StepBuildProviderComponent implements OnDestroy {
   }
 
   chooseBuildProvider(card: ProviderCard) {
+    this._logService.trace(LogCategories.cicd, '/build-provider-card-selected', card);
+
     if (card.enabled) {
       const currentFormValues = this.wizard.wizardValues;
       currentFormValues.buildProvider = card.id;

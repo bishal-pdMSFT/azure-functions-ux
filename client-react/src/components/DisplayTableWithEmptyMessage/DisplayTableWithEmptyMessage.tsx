@@ -4,9 +4,16 @@ import { style } from 'typestyle';
 
 import { ThemeExtended } from '../../theme/SemanticColorsExtended';
 import { ThemeContext } from '../../ThemeContext';
+import { ShimmeredDetailsList } from 'office-ui-fabric-react';
+import { detailListHeaderStyle } from '../form-controls/formControl.override.styles';
 
-interface DisplayTableWithEmptyMessageProps {
+export interface ShimmerProps {
+  lines: number;
+  show: boolean;
+}
+export interface DisplayTableWithEmptyMessageProps {
   emptyMessage?: string;
+  shimmer?: ShimmerProps;
 }
 const emptyTableMessageStyle = (theme: ThemeExtended) =>
   style({
@@ -18,6 +25,11 @@ const emptyTableMessageStyle = (theme: ThemeExtended) =>
     backgroundColor: theme.semanticColors.listBackground,
   });
 
+const initialShimmerTableStyle = (shimmerVisible: boolean) =>
+  style({
+    overflow: shimmerVisible ? 'hidden' : 'inherit',
+  });
+
 export const defaultCellStyle = style({
   fontSize: '12px',
   height: '15px',
@@ -25,11 +37,32 @@ export const defaultCellStyle = style({
 type Props = DisplayTableWithEmptyMessageProps & IDetailsListProps;
 const DisplayTableWithEmptyMessage: React.SFC<Props> = props => {
   const theme = useContext(ThemeContext);
-  const { emptyMessage, ...rest } = props;
+  const { emptyMessage, shimmer, columns, ...rest } = props;
+
+  const updatedColumns = (columns || []).map(column => {
+    const allHeaderClassName = `${detailListHeaderStyle} ${column.headerClassName || ''}`;
+    column.headerClassName = allHeaderClassName;
+    return column;
+  });
+
   return (
     <>
-      <DetailsList {...rest} />
-      {props.items.length === 0 && !!emptyMessage && <div className={emptyTableMessageStyle(theme)}>{emptyMessage}</div>}
+      {shimmer ? (
+        <ShimmeredDetailsList
+          enableShimmer={shimmer.show}
+          shimmerLines={shimmer.lines}
+          className={initialShimmerTableStyle(shimmer.show)}
+          removeFadingOverlay={true}
+          columns={updatedColumns}
+          detailsListStyles={rest.styles}
+          {...rest}
+        />
+      ) : (
+        <DetailsList columns={updatedColumns} {...rest} />
+      )}
+      {props.items.length === 0 && !!emptyMessage && (!shimmer || !shimmer.show) && (
+        <div className={emptyTableMessageStyle(theme)}>{emptyMessage}</div>
+      )}
     </>
   );
 };

@@ -31,7 +31,7 @@ import { SpecCostQueryInput } from './billing-models';
 import { PriceSpecInput, PriceSpec } from './price-spec';
 import { Subject } from 'rxjs/Subject';
 import { BillingMeter } from '../../../shared/models/arm/billingMeter';
-import { LogCategories, Links, ScenarioIds } from '../../../shared/models/constants';
+import { LogCategories, Links, ScenarioIds, Constants } from '../../../shared/models/constants';
 import { Tier, SkuCode } from './../../../shared/models/serverFarmSku';
 import { AuthzService } from 'app/shared/services/authz.service';
 import { AppKind } from 'app/shared/Utilities/app-kind';
@@ -42,6 +42,13 @@ export interface SpecPickerInput<T> {
   id: ResourceId;
   data?: T;
   specPicker: SpecPickerComponent;
+}
+
+export interface StampIpAddresses {
+  inboundIpAddress: string;
+  possibleInboundIpAddresses: string;
+  outboundIpAddresses: string;
+  possibleOutboundIpAddresses: string;
 }
 
 export interface PlanSpecPickerData {
@@ -55,8 +62,13 @@ export interface PlanSpecPickerData {
   isFunctionApp?: boolean;
   isLinux: boolean;
   isXenon: boolean;
+  hyperV: boolean;
   selectedLegacySkuName: string; // Looks like "small_standard"
   selectedSkuCode?: string; // Can be set in update scenario for initial spec selection
+  isElastic?: boolean;
+  isNewFunctionAppCreate?: boolean; // NOTE(shimedh): We need this additional flag temporarily to make it work with old and new FunctionApp creates.
+  // Since old creates always shows elastic premium sku's along with other sku's.
+  // However, in new full screen creates it would be based on the plan type selected which will determing isElastic boolean value.
 }
 
 export type ApplyButtonState = 'enabled' | 'disabled';
@@ -64,9 +76,11 @@ export type ApplyButtonState = 'enabled' | 'disabled';
 @Injectable()
 export class PlanPriceSpecManager {
   private readonly DynamicSku = 'Y1';
+  private readonly StampIpAddressesDelimeter = ',';
 
   selectedSpecGroup: PriceSpecGroup;
   specGroups: PriceSpecGroup[] = [];
+  specSpecificBanner: BannerMessage;
 
   get currentSkuCode(): string {
     if (!this._plan) {
@@ -81,6 +95,8 @@ export class PlanPriceSpecManager {
   private _subscriptionId: string;
   private _inputs: SpecPickerInput<PlanSpecPickerData>;
   private _ngUnsubscribe$ = new Subject();
+  private _numberOfSites = 0;
+  private _stampIpAddresses: StampIpAddresses;
 
   constructor(
     private _authZService: AuthzService,
@@ -117,32 +133,36 @@ export class PlanPriceSpecManager {
     return Observable.zip(this._getPlan(inputs), pricingTiers, (plan, pt) => ({
       plan: plan,
       pricingTiers: pt,
-    })).flatMap(r => {
-      // plan is null for new plans
-      this._plan = r.plan;
+    }))
+      .flatMap(r => {
+        // plan is null for new plans
+        this._plan = r.plan;
 
-      if (r.pricingTiers) {
-        this.specGroups = [
-          new GenericSpecGroup(this._injector, this, SpecGroup.Development, r.pricingTiers),
-          new GenericSpecGroup(this._injector, this, SpecGroup.Production, r.pricingTiers),
-        ];
-      }
-      // Initialize every spec for each spec group.  For most cards this is a no-op, but
-      // some require special handling so that we know if we need to hide/disable a card.
-      this.specGroups.forEach(g => {
-        const priceSpecInput: PriceSpecInput = {
-          specPickerInput: inputs,
-          plan: this._plan,
-          subscriptionId: this._subscriptionId,
-        };
+        if (r.pricingTiers) {
+          this.specGroups = [
+            new GenericSpecGroup(this._injector, this, SpecGroup.Development, r.pricingTiers),
+            new GenericSpecGroup(this._injector, this, SpecGroup.Production, r.pricingTiers),
+          ];
+        }
+        // Initialize every spec for each spec group.  For most cards this is a no-op, but
+        // some require special handling so that we know if we need to hide/disable a card.
+        this.specGroups.forEach(g => {
+          const priceSpecInput: PriceSpecInput = {
+            specPickerInput: inputs,
+            plan: this._plan,
+            subscriptionId: this._subscriptionId,
+          };
 
-        g.initialize(priceSpecInput);
-        specInitCalls = specInitCalls.concat(g.recommendedSpecs.map(s => s.initialize(priceSpecInput)));
-        specInitCalls = specInitCalls.concat(g.additionalSpecs.map(s => s.initialize(priceSpecInput)));
+          g.initialize(priceSpecInput);
+          specInitCalls = specInitCalls.concat(g.recommendedSpecs.map(s => s.initialize(priceSpecInput)));
+          specInitCalls = specInitCalls.concat(g.additionalSpecs.map(s => s.initialize(priceSpecInput)));
+        });
+
+        return specInitCalls.length > 0 ? Observable.zip(...specInitCalls) : Observable.of(null);
+      })
+      .do(() => {
+        return this._getServerFarmSites(inputs);
       });
-
-      return specInitCalls.length > 0 ? Observable.zip(...specInitCalls) : Observable.of(null);
-    });
   }
 
   getSpecCosts() {
@@ -162,8 +182,8 @@ export class PlanPriceSpecManager {
           g.recommendedSpecs.forEach(s => this._setBillingResourceId(s, meters));
           g.additionalSpecs.forEach(s => this._setBillingResourceId(s, meters));
 
-          specResourceSets = this._concatValidResourceSets(specResourceSets, g.recommendedSpecs);
-          specResourceSets = this._concatValidResourceSets(specResourceSets, g.additionalSpecs);
+          specResourceSets = this._concatAllResourceSetsForSpecs(specResourceSets, g.recommendedSpecs);
+          specResourceSets = this._concatAllResourceSetsForSpecs(specResourceSets, g.additionalSpecs);
 
           specsToAllowZeroCost = specsToAllowZeroCost.concat(
             g.recommendedSpecs.filter(s => s.allowZeroCost).map(s => s.specResourceSet.id)
@@ -237,6 +257,7 @@ export class PlanPriceSpecManager {
           }
 
           this.selectedSpecGroup.selectedSpec.updateUpsellBanner();
+          this._updateAppDensityStatusMessage(this.selectedSpecGroup.selectedSpec);
         } else {
           this._portalService.stopNotification(
             notificationId,
@@ -337,13 +358,61 @@ export class PlanPriceSpecManager {
     // plan is null for new plans
     if (this._plan) {
       const tier = this._plan.sku.tier;
-      if ((tier === Tier.premiumV2 && spec.tier !== Tier.premiumV2) || (tier !== Tier.premiumV2 && spec.tier === Tier.premiumV2)) {
-        // show message when upgrading to PV2 or downgrading from PV2.
+
+      this._updateAppDensityStatusMessage(spec);
+      const possibleInboundIpAddresses = this._stampIpAddresses.possibleInboundIpAddresses.split(this.StampIpAddressesDelimeter);
+      const isFlexStamp = possibleInboundIpAddresses.length > 1;
+
+      if (
+        isFlexStamp &&
+        ((tier === Tier.premiumV2 && spec.tier !== Tier.premiumV2) || (tier !== Tier.premiumV2 && spec.tier === Tier.premiumV2))
+      ) {
+        const possibleOutboundIpAddresses = this._stampIpAddresses.possibleOutboundIpAddresses.split(this.StampIpAddressesDelimeter);
+        const inboundIpAddresses = this._stampIpAddresses.inboundIpAddress.split(this.StampIpAddressesDelimeter);
+        const outboundIpAddresses = this._stampIpAddresses.outboundIpAddresses.split(this.StampIpAddressesDelimeter);
+
+        // show flex stamp message when upgrading to PV2 or downgrading from PV2 if it is flex stamp.
         this._specPicker.statusMessage = {
-          message: this._ts.instant(PortalResources.pricing_pv2UpsellInfoMessage),
+          message: this._ts.instant(PortalResources.pricing_pv2FlexStampCheckboxLabel),
           level: 'info',
-          infoLink: Links.pv2UpsellInfoLearnMore,
+          infoLink: Links.pv2FlexStampInfoLearnMore,
+          showCheckbox: true,
+          infoLinkAriaLabel: this._ts.instant(PortalResources.pricing_pv2FlexStampCheckboxAriaLabel),
         };
+
+        this.specSpecificBanner = {
+          level: BannerMessageLevel.INFO,
+          message: this._ts.instant(PortalResources.pricing_pv2FlexStampInfoMessage, {
+            inbound: possibleInboundIpAddresses
+              .filter(
+                possibleInboundIpAddress => !inboundIpAddresses.find(inboundIpAddress => inboundIpAddress === possibleInboundIpAddress)
+              )
+              .join(this.StampIpAddressesDelimeter),
+            outbound: possibleOutboundIpAddresses
+              .filter(
+                possibleOutboundIpAddress => !outboundIpAddresses.find(outboundIpAddress => outboundIpAddress === possibleOutboundIpAddress)
+              )
+              .join(this.StampIpAddressesDelimeter),
+          }),
+        };
+      } else {
+        this.specSpecificBanner = null;
+        const shouldShowUpsellStatusMessage =
+          !this._specPicker.statusMessage ||
+          (this._specPicker.statusMessage.level !== 'warning' && this._specPicker.statusMessage.level !== 'error');
+
+        if (
+          (shouldShowUpsellStatusMessage && (tier === Tier.premiumV2 && spec.tier !== Tier.premiumV2)) ||
+          (tier !== Tier.premiumV2 && spec.tier === Tier.premiumV2)
+        ) {
+          // show message when upgrading to PV2 or downgrading from PV2.
+          this._specPicker.statusMessage = {
+            message: this._ts.instant(PortalResources.pricing_pv2UpsellInfoMessage),
+            level: 'info',
+            infoLink: Links.pv2UpsellInfoLearnMore,
+            infoLinkAriaLabel: this._ts.instant(PortalResources.pricing_pv2UpsellInfoMessageAriaLabel),
+          };
+        }
       }
     }
   }
@@ -399,6 +468,38 @@ export class PlanPriceSpecManager {
           };
         }
       }
+    }
+  }
+
+  private _shouldShowAppDensityWarning(skuCode: string): boolean {
+    return (
+      this._scenarioService.checkScenario(ScenarioIds.appDensity).status !== 'disabled' &&
+      this._isAppDensitySkuCode(skuCode) &&
+      this._numberOfSites >= Constants.appDensityLimit
+    );
+  }
+
+  private _isAppDensitySkuCode(skuCode: string): boolean {
+    const upperCaseSkuCode = skuCode.toUpperCase();
+    return (
+      upperCaseSkuCode === SkuCode.Basic.B1 ||
+      upperCaseSkuCode === SkuCode.Standard.S1 ||
+      upperCaseSkuCode === SkuCode.Premium.P1 ||
+      upperCaseSkuCode === SkuCode.PremiumContainer.PC2 ||
+      upperCaseSkuCode === SkuCode.PremiumV2.P1V2 ||
+      upperCaseSkuCode === SkuCode.Isolated.I1 ||
+      upperCaseSkuCode === SkuCode.ElasticPremium.EP1
+    );
+  }
+
+  private _updateAppDensityStatusMessage(spec: PriceSpec) {
+    if (this._shouldShowAppDensityWarning(spec.skuCode)) {
+      this._specPicker.statusMessage = {
+        message: this._ts.instant(PortalResources.pricing_appDensityWarningMessage).format(this._plan.name),
+        level: 'warning',
+        infoLink: Links.appDensityWarningLink,
+        infoLinkAriaLabel: this._ts.instant(PortalResources.pricing_appDensityWarningMessageAriaLabel),
+      };
     }
   }
 
@@ -468,6 +569,32 @@ export class PlanPriceSpecManager {
     return Observable.of(null);
   }
 
+  private _getServerFarmSites(inputs: SpecPickerInput<PlanSpecPickerData>) {
+    if (this._isUpdateScenario(inputs)) {
+      this._numberOfSites = 0;
+      this._stampIpAddresses = null;
+      return this._planService.getServerFarmSites(inputs.id, true).subscribe(
+        response => {
+          if (response.isSuccessful) {
+            this._numberOfSites = this._numberOfSites + response.result.value.length;
+            this._stampIpAddresses = {
+              inboundIpAddress: response.result.value[0].properties.inboundIpAddress,
+              outboundIpAddresses: response.result.value[0].properties.outboundIpAddresses,
+              possibleInboundIpAddresses: response.result.value[0].properties.possibleInboundIpAddresses,
+              possibleOutboundIpAddresses: response.result.value[0].properties.possibleOutboundIpAddresses,
+            };
+          }
+        },
+        null,
+        () => {
+          this._updateAppDensityStatusMessage(this.selectedSpecGroup.selectedSpec);
+        }
+      );
+    }
+
+    return Observable.of(null);
+  }
+
   // Scale operations for isolated can take a really long time.  When that happens, we'll show a warning
   // banner and isable the apply button so that they can't scale again until it's completed.
   private _pollForIsolatedScaleCompletion(resourceId: ResourceId) {
@@ -505,8 +632,17 @@ export class PlanPriceSpecManager {
       });
   }
 
-  private _concatValidResourceSets(allResourceSets: SpecResourceSet[], specs: PriceSpec[]) {
-    return allResourceSets.concat(specs.filter(s => s.specResourceSet.firstParty[0].resourceId).map(s => s.specResourceSet));
+  private _concatAllResourceSetsForSpecs(allResourceSets: SpecResourceSet[], specs: PriceSpec[]) {
+    const specsFiltered = specs.filter(spec => {
+      return (
+        !!spec.specResourceSet &&
+        !!spec.specResourceSet.firstParty &&
+        !!spec.specResourceSet.firstParty.length &&
+        spec.specResourceSet.firstParty.filter(f => !f.resourceId).length === 0
+      );
+    });
+
+    return allResourceSets.concat(specsFiltered.map(s => s.specResourceSet));
   }
 
   private _getBillingMeters(inputs: SpecPickerInput<PlanSpecPickerData>) {
@@ -535,33 +671,32 @@ export class PlanPriceSpecManager {
       throw Error('meterFriendlyName must be set');
     }
 
-    if (!spec.specResourceSet || !spec.specResourceSet.firstParty || spec.specResourceSet.firstParty.length !== 1) {
-      throw Error('Spec must contain a specResourceSet with one firstParty item defined');
+    if (!spec.specResourceSet || !spec.specResourceSet.firstParty || spec.specResourceSet.firstParty.length < 1) {
+      throw Error('Spec must contain a specResourceSet with at least one firstParty item defined');
     }
 
-    let billingMeter: ArmObj<BillingMeter>;
-    if (!!spec.skuCode) {
-      billingMeter = billingMeters.find(m => m.properties.shortName.toLowerCase() === spec.skuCode.toLowerCase());
-    }
-    if (!billingMeter && !!spec.billingSkuCode) {
-      billingMeter = billingMeters.find(m => m.properties.shortName.toLowerCase() === spec.billingSkuCode.toLowerCase());
-    }
-    if (!billingMeter) {
-      // TODO(shimedh): Remove condition for Free Linux once billingMeters API is updated by backend to return the meters correctly.
-      const osType = this._getOsType(this._inputs);
-      if (osType === OsType.Linux && spec.skuCode === SkuCode.Free.F1) {
-        spec.specResourceSet.firstParty[0].resourceId = 'a90aec9f-eecb-42c7-8421-9b96716996dc';
-      } else {
-        this._logService.error(LogCategories.specPicker, '/meter-not-found', {
-          skuCode: spec.skuCode,
-          osType: osType,
-          location: this._isUpdateScenario(this._inputs) ? this._plan.location : this._inputs.data.location,
-        });
+    spec.specResourceSet.firstParty.forEach(firstPartyResource => {
+      let billingMeter: ArmObj<BillingMeter>;
+      if (!!firstPartyResource.id) {
+        billingMeter = billingMeters.find(m => m.properties.shortName.toLowerCase() === firstPartyResource.id.toLowerCase());
       }
-      return;
-    }
-
-    spec.specResourceSet.firstParty[0].resourceId = billingMeter.properties.meterId;
+      if (!billingMeter) {
+        // TODO(shimedh): Remove condition for Free Linux once billingMeters API is updated by backend to return the meters correctly.
+        const osType = this._getOsType(this._inputs);
+        if (osType === OsType.Linux && spec.skuCode === SkuCode.Free.F1) {
+          spec.specResourceSet.firstParty[0].resourceId = 'a90aec9f-eecb-42c7-8421-9b96716996dc';
+        } else {
+          this._logService.error(LogCategories.specPicker, '/meter-not-found', {
+            firstPartyResourceMeterId: firstPartyResource.id,
+            skuCode: spec.skuCode,
+            osType: osType,
+            location: this._isUpdateScenario(this._inputs) ? this._plan.location : this._inputs.data.location,
+          });
+        }
+      } else {
+        firstPartyResource.resourceId = billingMeter.properties.meterId;
+      }
+    });
   }
 
   private _updatePriceStrings(result: SpecCostQueryResult, specs: PriceSpec[]) {
@@ -576,10 +711,11 @@ export class PlanPriceSpecManager {
           spec.priceString = this._ts.instant(PortalResources.free);
           spec.price = 0;
         } else {
-          const meter = costResult.firstParty[0].meters[0];
-          spec.price = meter.perUnitAmount * 744; // 744 hours in a month
+          spec.price = costResult.amount;
           const rate = spec.price.toFixed(2);
-          spec.priceString = this._ts.instant(PortalResources.pricing_pricePerMonth).format(rate, meter.perUnitCurrencyCode);
+          spec.priceString = spec.priceIsBaseline
+            ? this._ts.instant(PortalResources.pricing_pricePerMonthBaseline).format(rate, costResult.currencyCode)
+            : this._ts.instant(PortalResources.pricing_pricePerMonth).format(rate, costResult.currencyCode);
         }
       } else {
         // Set to empty string so that UI knows the difference between loading and no value which can happen for CSP subscriptions

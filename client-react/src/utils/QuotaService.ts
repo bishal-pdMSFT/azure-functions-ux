@@ -1,9 +1,9 @@
 import MakeArmCall from '../ApiHelpers/ArmHelper';
-import { ComputeMode } from '../models/WebAppModels';
 import { QuotaSettings, QuotaScope } from '../models/quotaSettings';
 import { LogCategories } from './LogCategories';
 import LogService from './LogService';
 import { CommonConstants } from '../utils/CommonConstants';
+import { ComputeMode } from '../models/site/compute-mode';
 
 export class QuotaService {
   private static readonly _site = 'site';
@@ -21,7 +21,7 @@ export class QuotaService {
       resourceId: id,
       commandName: '',
       method: 'GET',
-      apiVersion: CommonConstants.ApiVersions.websiteApiVersion20160301,
+      apiVersion: CommonConstants.ApiVersions.antaresApiVersion20181101,
     });
 
     if (!quotaSettings.metadata.success) {

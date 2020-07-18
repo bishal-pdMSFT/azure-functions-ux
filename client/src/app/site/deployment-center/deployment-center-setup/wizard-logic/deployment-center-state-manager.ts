@@ -2,48 +2,57 @@ import { ReplaySubject } from 'rxjs/ReplaySubject';
 import { FormGroup, FormControl } from '@angular/forms';
 import {
   WizardForm,
-  ProvisioningConfiguration,
-  CiConfiguration,
-  DeploymentTarget,
-  DeploymentSourceType,
-  CodeRepositoryDeploymentSource,
-  ApplicationType,
-  DeploymentTargetProvider,
-  AzureAppServiceDeploymentTarget,
-  AzureResourceType,
-  TargetEnvironmentType,
-  CodeRepository,
-  BuildConfiguration,
-  PythonFrameworkType,
+  PermissionsResultCreationParameters,
+  PermissionsResult,
+  ProvisioningConfigurationV2,
 } from './deployment-center-setup-models';
 import { Observable } from 'rxjs/Observable';
-import { Headers } from '@angular/http';
 import { CacheService } from '../../../../shared/services/cache.service';
 import { ArmSiteDescriptor } from '../../../../shared/resourceDescriptors';
 import { Injectable, OnDestroy } from '@angular/core';
 import { Subject } from 'rxjs/Subject';
 import { UserService } from '../../../../shared/services/user.service';
-import { ARMApiVersions, ScenarioIds, DeploymentCenterConstants, Kinds } from '../../../../shared/models/constants';
+import {
+  ARMApiVersions,
+  ScenarioIds,
+  Kinds,
+  RuntimeStacks,
+  Constants,
+  JavaVersions,
+  JavaContainers,
+  DeploymentCenterConstants,
+} from '../../../../shared/models/constants';
 import { parseToken } from '../../../../pickers/microsoft-graph/microsoft-graph-helper';
 import { PortalService } from '../../../../shared/services/portal.service';
+import { TranslateService } from '@ngx-translate/core';
+import { PortalResources } from '../../../../shared/models/portal-resources';
 import { ArmObj } from '../../../../shared/models/arm/arm-obj';
 import { Site } from '../../../../shared/models/arm/site';
 import { SiteService } from '../../../../shared/services/site.service';
 import { forkJoin } from 'rxjs/observable/forkJoin';
 import { ScenarioService } from '../../../../shared/services/scenario/scenario.service';
-import { AuthzService } from '../../../../shared/services/authz.service';
 import { VSOAccount } from '../../Models/vso-repo';
-import { AzureDevOpsService } from './azure-devops.service';
+import { AzureDevOpsService, AzureDevOpsDeploymentMethod, TargetAzDevDeployment } from './azure-devops.service';
+import { LocalStorageService } from '../../../../shared/services/local-storage.service';
+import { GithubService } from './github.service';
+import { GitHubActionWorkflowRequestContent, GitHubCommit } from '../../Models/github';
+import { Guid } from 'app/shared/Utilities/Guid';
+import { SubscriptionService } from 'app/shared/services/subscription.service';
+import { SiteConfig } from 'app/shared/models/arm/site-config';
+import { WorkflowOptions } from '../../Models/deployment-enums';
+
+const CreateAadAppPermissionStorageKey = 'DeploymentCenterSessionCanCreateAadApp';
 
 @Injectable()
 export class DeploymentCenterStateManager implements OnDestroy {
   public resourceIdStream$ = new ReplaySubject<string>(1);
   public wizardForm: FormGroup = new FormGroup({});
   private _resourceId = '';
-  private _location = '';
   private _ngUnsubscribe$ = new Subject();
   private _token: string;
   private _vstsApiToken: string;
+  private _sessionId: string;
+  private _azureDevOpsDeploymentMethod: AzureDevOpsDeploymentMethod = AzureDevOpsDeploymentMethod.UseV1Api;
   public siteArm: ArmObj<Site>;
   public siteArmObj$ = new ReplaySubject<ArmObj<Site>>();
   public updateSourceProviderConfig$ = new Subject();
@@ -56,33 +65,63 @@ export class DeploymentCenterStateManager implements OnDestroy {
   public isFunctionApp = false;
   public vstsKuduOnly = false;
   public vsoAccounts: VSOAccount[] = [];
+  public hideConfigureStepContinueButton = false;
+  public siteName = '';
+  public slotName = '';
+  public gitHubPublishProfileSecretGuid = '';
+  public isGithubActionWorkflowScopeAvailable = false;
+  public stack = '';
+  public stackVersion = '';
+  public gitHubTokenUpdated$ = new ReplaySubject<boolean>();
+
   constructor(
     private _cacheService: CacheService,
     private _azureDevOpsService: AzureDevOpsService,
+    private _translateService: TranslateService,
+    private _localStorageService: LocalStorageService,
+    private _portalService: PortalService,
+    private _scenarioService: ScenarioService,
+    private _githubService: GithubService,
     siteService: SiteService,
     userService: UserService,
-    portalService: PortalService,
-    scenarioService: ScenarioService,
-    authZService: AuthzService
+    subscriptionService: SubscriptionService
   ) {
     this.resourceIdStream$
       .switchMap(r => {
         this._resourceId = r;
         const siteDescriptor = new ArmSiteDescriptor(this._resourceId);
+        this.siteName = siteDescriptor.site;
+        this.slotName = siteDescriptor.slot;
+
+        // TODO (michinoy): Figure out a way to only generate this guid IF github actions build provider
+        // is selected. This might require refactoring a ton of stuff in step-complete component to understand
+        // what build provider is selected.
+        this.gitHubPublishProfileSecretGuid = Guid.newGuid()
+          .toLowerCase()
+          .replace(/[-]/g, '');
+
         return forkJoin(
           siteService.getSite(this._resourceId),
-          this._cacheService.getArm(`/subscriptions/${siteDescriptor.subscription}`, false, ARMApiVersions.armApiVersion)
+          siteService.getSiteConfig(this._resourceId),
+          siteService.getAppSettings(this._resourceId),
+          siteService.fetchSiteConfigMetadata(this._resourceId),
+          subscriptionService.getSubscription(siteDescriptor.subscription)
         );
       })
       .switchMap(result => {
-        const [site, sub] = result;
+        const [site, config, appSettings, configMetadata, sub] = result;
         this.siteArm = site.result;
         this.isLinuxApp = this.siteArm.kind.toLowerCase().includes(Kinds.linux);
         this.isFunctionApp = this.siteArm.kind.toLowerCase().includes(Kinds.functionApp);
+        this.subscriptionName = sub.result.displayName;
+
+        if (config.isSuccessful && appSettings.isSuccessful && configMetadata.isSuccessful) {
+          this._setStackAndVersion(config.result.properties, appSettings.result.properties, configMetadata.result.properties);
+        }
+
         this.siteArmObj$.next(this.siteArm);
-        this.subscriptionName = sub.json().displayName;
-        this._location = this.siteArm.location;
-        return scenarioService.checkScenarioAsync(ScenarioIds.vstsDeploymentHide, { site: this.siteArm });
+
+        return this._scenarioService.checkScenarioAsync(ScenarioIds.vstsDeploymentHide, { site: this.siteArm });
       })
       .subscribe(vstsScenarioCheck => {
         this.hideBuild = vstsScenarioCheck.status === 'disabled';
@@ -93,16 +132,8 @@ export class DeploymentCenterStateManager implements OnDestroy {
       .takeUntil(this._ngUnsubscribe$)
       .subscribe(r => {
         this._token = r.token;
+        this._sessionId = r.sessionId;
       });
-
-    if (scenarioService.checkScenario(ScenarioIds.vstsSource).status !== 'disabled') {
-      portalService
-        .getAdToken('azureTfsApi')
-        .first()
-        .subscribe(tokenData => {
-          this._vstsApiToken = tokenData.result.token;
-        });
-    }
   }
 
   public get wizardValues(): WizardForm {
@@ -124,6 +155,17 @@ export class DeploymentCenterStateManager implements OnDestroy {
     switch (this.wizardValues.buildProvider) {
       case 'vsts':
         return this._deployVsts();
+      case 'github':
+        // NOTE(michinoy): Only initiate writing a workflow configuration file if the branch does not already have it OR
+        // the user opted to overwrite it.
+        if (
+          !this.wizardValues.sourceSettings.githubActionWorkflowOption ||
+          this.wizardValues.sourceSettings.githubActionWorkflowOption === WorkflowOptions.Overwrite
+        ) {
+          return this._deployGithubActions().map(result => ({ status: 'succeeded', statusMessage: null, result }));
+        } else {
+          return this._deployKudu().map(result => ({ status: 'succeeded', statusMessage: null, result }));
+        }
       default:
         return this._deployKudu().map(result => ({ status: 'succeeded', statusMessage: null, result }));
     }
@@ -132,22 +174,131 @@ export class DeploymentCenterStateManager implements OnDestroy {
   public fetchVSTSProfile() {
     // if the first get fails, it's likely because the user doesn't have an account in vsts yet
     // the fix for this is to do an empty post call on the same url and then get it
-    return this._cacheService.get(DeploymentCenterConstants.vstsProfileUri, true, this.getVstsDirectHeaders(false)).catch(() => {
-      return this._cacheService.post(DeploymentCenterConstants.vstsProfileUri, true, this.getVstsDirectHeaders(false)).switchMap(() => {
-        return this._cacheService.get(DeploymentCenterConstants.vstsProfileUri, true, this.getVstsDirectHeaders(false));
+    return this._cacheService
+      .get(AzureDevOpsService.AzDevProfileUri, true, this._azureDevOpsService.getAzDevDirectHeaders(false))
+      .catch(() => {
+        return this._cacheService
+          .post(AzureDevOpsService.AzDevProfileUri, true, this._azureDevOpsService.getAzDevDirectHeaders(false))
+          .switchMap(() => {
+            return this._cacheService.get(AzureDevOpsService.AzDevProfileUri, true, this._azureDevOpsService.getAzDevDirectHeaders(false));
+          });
       });
-    });
+  }
+
+  private _setStackAndVersion(
+    siteConfig: SiteConfig,
+    siteAppSettings: { [key: string]: string },
+    configMetadata: { [key: string]: string }
+  ) {
+    if (this.isLinuxApp) {
+      this._setStackAndVersionForLinux(siteConfig);
+    } else {
+      this._setStackAndVersionForWindows(siteConfig, siteAppSettings, configMetadata);
+    }
+  }
+
+  private _setStackAndVersionForWindows(
+    siteConfig: SiteConfig,
+    siteAppSettings: { [key: string]: string },
+    configMetadata: { [key: string]: string }
+  ) {
+    if (configMetadata['CURRENT_STACK']) {
+      const metadataStack = configMetadata['CURRENT_STACK'].toLowerCase();
+
+      // NOTE(michinoy): Java is special, so need to handle it carefully. Also in this case, use
+      // the string 'java' rather than any of the constants defined as it is not related to any of the
+      // defined constants.
+      if (metadataStack === 'java') {
+        this.stack = siteConfig.javaVersion === JavaVersions.WindowsVersion8 ? RuntimeStacks.java8 : RuntimeStacks.java11;
+      } else {
+        this.stack = metadataStack;
+      }
+    }
+
+    if (this.stack === RuntimeStacks.node) {
+      this.stackVersion = siteAppSettings[Constants.nodeVersionAppSettingName];
+    } else if (this.stack === RuntimeStacks.python) {
+      this.stackVersion = siteConfig.pythonVersion;
+    } else if (this.stack === RuntimeStacks.java8 || this.stack === RuntimeStacks.java11) {
+      this.stackVersion = `${siteConfig.javaVersion}|${siteConfig.javaContainer}|${siteConfig.javaContainerVersion}`;
+    } else if (this.stack === '') {
+      this.stackVersion = '';
+    }
+  }
+
+  private _setStackAndVersionForLinux(siteConfig: SiteConfig) {
+    const linuxFxVersionParts = siteConfig.linuxFxVersion ? siteConfig.linuxFxVersion.split('|') : [];
+    const runtimeStack = linuxFxVersionParts.length > 0 ? linuxFxVersionParts[0].toLocaleLowerCase() : '';
+
+    // NOTE(michinoy): Java is special, so need to handle it carefully.
+    if (runtimeStack === JavaContainers.JavaSE || runtimeStack === JavaContainers.Tomcat) {
+      const fxVersionParts = !!siteConfig.linuxFxVersion ? siteConfig.linuxFxVersion.split('-') : [];
+      const fxStack = fxVersionParts.length === 2 ? fxVersionParts[1].toLocaleLowerCase() : '';
+      if (fxStack === JavaVersions.LinuxVersion8 || fxStack === JavaVersions.LinuxVersion11) {
+        this.stack = fxStack === JavaVersions.LinuxVersion8 ? RuntimeStacks.java8 : RuntimeStacks.java11;
+      } else {
+        this.stack = '';
+      }
+    } else {
+      this.stack = runtimeStack;
+    }
+
+    this.stackVersion = !!siteConfig.linuxFxVersion ? siteConfig.linuxFxVersion : '';
+  }
+
+  private _deployGithubActions() {
+    const repo = this.wizardValues.sourceSettings.repoUrl.replace(`${DeploymentCenterConstants.githubUri}/`, '');
+    const branch = this.wizardValues.sourceSettings.branch || 'master';
+    const workflowInformation = this._githubService.getWorkflowInformation(
+      this.wizardValues.buildSettings,
+      this.wizardValues.sourceSettings,
+      this.isLinuxApp,
+      this.gitHubPublishProfileSecretGuid,
+      this.siteName,
+      this.slotName
+    );
+
+    const commitInfo: GitHubCommit = {
+      repoName: repo,
+      branchName: branch,
+      filePath: `.github/workflows/${workflowInformation.fileName}`,
+      message: this._translateService.instant(PortalResources.githubActionWorkflowCommitMessage),
+      contentBase64Encoded: btoa(workflowInformation.content),
+      committer: {
+        name: 'Azure App Service',
+        email: 'donotreply@microsoft.com',
+      },
+    };
+
+    return this._githubService
+      .fetchWorkflowConfiguration(this.getToken(), this.wizardValues.sourceSettings.repoUrl, repo, branch, commitInfo.filePath)
+      .switchMap(fileContentResponse => {
+        if (fileContentResponse) {
+          commitInfo.sha = fileContentResponse.sha;
+        }
+
+        const requestContent: GitHubActionWorkflowRequestContent = {
+          resourceId: this._resourceId,
+          secretName: workflowInformation.secretName,
+          commit: commitInfo,
+        };
+
+        return this._githubService.createOrUpdateActionWorkflow(this.getToken(), requestContent);
+      })
+      .switchMap(_ => {
+        return this._deployKudu();
+      });
   }
 
   private _deployKudu() {
     const payload = this.wizardValues.sourceSettings;
-    if (this.wizardValues.sourceProvider === 'external') {
-      payload.isManualIntegration = true;
-    }
+
+    payload.isGitHubAction = this.wizardValues.buildProvider === 'github';
+    payload.isManualIntegration = this.wizardValues.sourceProvider === 'external';
 
     if (this.wizardValues.sourceProvider === 'localgit') {
       return this._cacheService
-        .patchArm(`${this._resourceId}/config/web`, ARMApiVersions.websiteApiVersion20181101, {
+        .patchArm(`${this._resourceId}/config/web`, ARMApiVersions.antaresApiVersion20181101, {
           properties: {
             scmType: 'LocalGit',
           },
@@ -155,7 +306,7 @@ export class DeploymentCenterStateManager implements OnDestroy {
         .map(r => r.json());
     } else {
       return this._cacheService
-        .putArm(`${this._resourceId}/sourcecontrols/web`, ARMApiVersions.websiteApiVersion, {
+        .putArm(`${this._resourceId}/sourcecontrols/web`, ARMApiVersions.antaresApiVersion20181101, {
           properties: payload,
         })
         .map(r => r.json());
@@ -163,18 +314,47 @@ export class DeploymentCenterStateManager implements OnDestroy {
   }
 
   private _deployVsts() {
-    return this._startVstsDeployment().concatMap(id => {
-      return Observable.timer(1000, 1000)
-        .switchMap(() => this._pollVstsCheck(id))
-        .map(r => {
-          const result = r.json();
-          const ciConfig: { status: string; statusMessage: string } = result.ciConfiguration.result;
-          return { ...ciConfig, result: result.ciConfiguration };
-        })
-        .first(result => {
-          return result.status !== 'inProgress' && result.status !== 'queued';
+    return this._getVstsToken()
+      .switchMap(r => {
+        if (r.status !== 'succeeded') {
+          return Observable.of(r);
+        }
+        this._vstsApiToken = r.result;
+        return this._azureDevOpsService.getAzureDevOpsDeploymentMethod(this.siteArm);
+      })
+      .switchMap(r => {
+        this._azureDevOpsDeploymentMethod = r.result;
+        if (
+          this._azureDevOpsDeploymentMethod === AzureDevOpsDeploymentMethod.UsePublishProfile ||
+          AzureDevOpsService.TargetAzDevDeployment === TargetAzDevDeployment.Devfabric
+        ) {
+          return Observable.of({
+            status: 'succeeded',
+            statusMessage: null,
+            result: null,
+          });
+        } else {
+          return this._canCreateAadApp();
+        }
+      })
+      .switchMap(r => {
+        if (r.status !== 'succeeded') {
+          return Observable.of(r);
+        }
+
+        return this._startVstsDeployment().concatMap(id => {
+          return Observable.timer(1000, 1000)
+            .switchMap(() => this._pollVstsCheck(id))
+            .map(r => {
+              const result = r.json();
+              const ciConfig: { status: string; statusMessage: string } = result.ciConfiguration.result;
+              return { ...ciConfig, result: result.ciConfiguration };
+            })
+            .first(result => {
+              return result.status !== 'inProgress' && result.status !== 'queued';
+            });
         });
-    });
+      });
   }
 
   private _pollVstsCheck(id: string) {
@@ -184,23 +364,35 @@ export class DeploymentCenterStateManager implements OnDestroy {
       )!.ForceMsaPassThrough;
 
       return this._cacheService.get(
-        `https://${
+        `${AzureDevOpsService.AzureDevOpsUrl.PeCollectionLevel.format(
           this.wizardValues.buildSettings.vstsAccount
-        }.portalext.visualstudio.com/_apis/ContinuousDelivery/ProvisioningConfigurations/${id}?api-version=3.2-preview.1`,
+        )}_apis/ContinuousDelivery/ProvisioningConfigurations/${id}?api-version=3.2-preview.1`,
         true,
-        this.getVstsDirectHeaders(appendMsaPassthroughHeader)
+        this._azureDevOpsService.getAzDevDirectHeaders(appendMsaPassthroughHeader)
       );
     });
   }
 
   private _startVstsDeployment() {
-    const deploymentObject: ProvisioningConfiguration = {
-      authToken: this.getToken(),
-      ciConfiguration: this._ciConfig,
-      id: null,
-      source: this._deploymentSource,
-      targets: this._deploymentTargets,
-    };
+    if (this.wizardValues.sourceProvider === 'vsts') {
+      this.wizardValues.sourceSettings.repoUrl = this.selectedVstsRepoId;
+    }
+    const deploymentObject = this._azureDevOpsService.getAzureDevOpsProvisioningConfiguration(
+      this.wizardValues,
+      this.siteArm,
+      this.subscriptionName,
+      this._vstsApiToken,
+      this._azureDevOpsDeploymentMethod
+    );
+
+    this._portalService.logAction('deploymentcenter', 'azureDevOpsDeployment', {
+      buildProvider: this.wizardValues.buildProvider,
+      sourceProvider: this.wizardValues.sourceProvider,
+      pipelineTemplateId: !!(<ProvisioningConfigurationV2>deploymentObject).pipelineTemplateId
+        ? (<ProvisioningConfigurationV2>deploymentObject).pipelineTemplateId
+        : '',
+      azureDevOpsDeploymentMethod: AzureDevOpsDeploymentMethod[this._azureDevOpsDeploymentMethod],
+    });
 
     const setupvsoCall = this._azureDevOpsService.startDeployment(
       this.wizardValues.buildSettings.vstsAccount,
@@ -211,198 +403,108 @@ export class DeploymentCenterStateManager implements OnDestroy {
     if (this.wizardValues.buildSettings.createNewVsoAccount) {
       return this._cacheService
         .post(
-          `https://app.vsaex.visualstudio.com/_apis/HostAcquisition/collections?collectionName=${
+          `${AzureDevOpsService.AzureDevOpsUrl.Aex}_apis/HostAcquisition/collections?collectionName=${
             this.wizardValues.buildSettings.vstsAccount
           }&preferredRegion=${this.wizardValues.buildSettings.location}&api-version=4.0-preview.1`,
           true,
-          this.getVstsDirectHeaders(false),
+          this._azureDevOpsService.getAzDevDirectHeaders(false),
           {
             'VisualStudio.Services.HostResolution.UseCodexDomainForHostCreation': true,
           }
         )
-        .switchMap(r => setupvsoCall)
+        .switchMap(() => setupvsoCall)
         .switchMap(r => Observable.of(r.id));
     }
     return setupvsoCall.switchMap(r => {
       return Observable.of(r.id);
     });
   }
-  private get _ciConfig(): CiConfiguration {
-    return {
-      project: {
-        name: this.wizardValues.buildSettings.vstsProject,
+
+  private _canCreateAadApp(): Observable<{ status: string; statusMessage: string; result: any }> {
+    const success = {
+      status: 'succeeded',
+      statusMessage: null,
+      result: null,
+    };
+
+    const permissionPayload: PermissionsResultCreationParameters = {
+      aadPermissions: {
+        token: this._vstsApiToken,
+        tenantId: parseToken(this._token).tid,
       },
     };
-  }
 
-  private get _deploymentSource(): CodeRepositoryDeploymentSource {
-    return {
-      type: DeploymentSourceType.CodeRepository,
-      buildConfiguration: this._buildConfiguration,
-      repository: this._repoInfo,
-    };
-  }
-
-  private get _buildConfiguration(): BuildConfiguration {
-    const buildConfig: BuildConfiguration = {
-      type: this._applicationType,
-      workingDirectory: this.wizardValues.buildSettings.workingDirectory,
-      version: this.wizardValues.buildSettings.frameworkVersion,
-    };
-
-    if (this.isLinuxApp) {
-      buildConfig.startupCommand = this.wizardValues.buildSettings.startupCommand;
-    }
-    if (this.wizardValues.buildSettings.applicationFramework === 'Ruby') {
-      buildConfig.rubyFramework = 1;
-    }
-    if (this.wizardValues.buildSettings.applicationFramework === 'Python') {
-      buildConfig.pythonExtensionId = this.wizardValues.buildSettings.pythonSettings.version;
-      buildConfig.pythonFramework = this.wizardValues.buildSettings.pythonSettings.framework;
-      if (buildConfig.pythonFramework === PythonFrameworkType.Flask) {
-        buildConfig.flaskProjectName = this.wizardValues.buildSettings.pythonSettings.flaskProjectName;
-      }
-      if (buildConfig.pythonFramework === PythonFrameworkType.Django) {
-        buildConfig.djangoSettingsModule = this.wizardValues.buildSettings.pythonSettings.djangoSettingsModule;
-      }
-    }
-    return buildConfig;
-  }
-
-  private get _repoInfo(): CodeRepository {
-    switch (this.wizardValues.sourceProvider) {
-      case 'github':
-        return this._githubRepoInfo;
-      case 'vsts':
-        return this._vstsRepoInfo;
-      case 'external':
-        return this._externalRepoInfo;
-      default:
-        return this._localGitInfo;
+    if (!this._isAadCreatePermissionStored()) {
+      return this._azureDevOpsService.getPermissionResult(permissionPayload).map((r: PermissionsResult) => {
+        if (!r.aadPermissions.value) {
+          return {
+            status: 'failed',
+            statusMessage: this._translateService.instant(PortalResources.noPermissionsToCreateApp).format(r.aadPermissions.message),
+            result: null,
+          };
+        } else {
+          this._storeAadCreatePermission();
+          return success;
+        }
+      });
+    } else {
+      return Observable.of(success);
     }
   }
 
-  private get _githubRepoInfo(): CodeRepository {
-    const repoId = this.wizardValues.sourceSettings.repoUrl.replace('https://github.com/', '');
-    return {
-      authorizationInfo: {
-        scheme: 'PersonalAccessToken',
-        parameters: {
-          AccessToken: `#{GithubToken}#`,
-        },
-      },
-      defaultBranch: `refs/heads/${this.wizardValues.sourceSettings.branch}`,
-      type: 'GitHub',
-      id: repoId,
-    };
-  }
-
-  private get _localGitInfo(): CodeRepository {
-    return {
-      type: 'LocalGit',
-      id: null,
-      defaultBranch: 'refs/heads/master',
-      authorizationInfo: null,
-    };
-  }
-
-  private get _vstsRepoInfo(): CodeRepository {
-    return {
-      type: 'TfsGit',
-      id: this.selectedVstsRepoId,
-      defaultBranch: `refs/heads/${this.wizardValues.sourceSettings.branch}`,
-      authorizationInfo: null,
-    };
-  }
-
-  private get _externalRepoInfo(): CodeRepository {
-    const sourceSettings = this.wizardValues.sourceSettings;
-    const privateRepo = sourceSettings.privateRepo;
-    return {
-      type: 'Git',
-      id: sourceSettings.repoUrl,
-      defaultBranch: sourceSettings.branch,
-      authorizationInfo: {
-        scheme: 'UsernamePassword',
-        parameters: {
-          username: privateRepo ? sourceSettings.username : '',
-          password: privateRepo ? sourceSettings.password : '',
-        },
-      },
-    };
-  }
-
-  private get _deploymentTargets(): DeploymentTarget[] {
-    return [this._primaryTarget];
-  }
-
-  private get _primaryTarget(): AzureAppServiceDeploymentTarget {
-    const tid = parseToken(this._token).tid;
-    const siteDescriptor = new ArmSiteDescriptor(this._resourceId);
-    const targetObject = {
-      provider: DeploymentTargetProvider.Azure,
-      type: this.isLinuxApp ? AzureResourceType.LinuxAppService : AzureResourceType.WindowsAppService,
-      environmentType: TargetEnvironmentType.Production,
-      friendlyName: 'Production',
-      subscriptionId: siteDescriptor.subscription,
-      subscriptionName: this.subscriptionName,
-      tenantId: tid,
-      resourceIdentifier: siteDescriptor.getFormattedTargetSiteName(),
-      location: this._location,
-      resourceGroupName: siteDescriptor.resourceGroup,
-      authorizationInfo: {
-        scheme: 'Headers',
-        parameters: {
-          Authorization: `Bearer ${this._vstsApiToken}`,
-        },
-      },
-      createOptions: null,
-      slotSwapConfiguration: null,
-    };
-    return targetObject;
-  }
-
-  private get _applicationType(): ApplicationType {
-    switch (this.wizardValues.buildSettings.applicationFramework) {
-      case 'AspNetWap':
-        return ApplicationType.AspNetWap;
-      case 'AspNetCore':
-        return ApplicationType.AspNetCore;
-      case 'Node':
-        return ApplicationType.NodeJS;
-      case 'PHP':
-        return ApplicationType.PHP;
-      case 'Python':
-        return ApplicationType.Python;
-      case 'Ruby':
-        return ApplicationType.Ruby;
-      case 'ScriptFunction':
-        return ApplicationType.ScriptFunctionApp;
-      case 'PrecompiledFunction':
-        return ApplicationType.DotNetPreCompiledFunctionApp;
-      case 'StaticWebapp':
-        return ApplicationType.StaticWebapp;
-      default:
-        return ApplicationType.Undefined;
+  private _isAadCreatePermissionStored(): boolean {
+    let storedPermissionItem = <any>this._localStorageService.getItem(CreateAadAppPermissionStorageKey);
+    if (storedPermissionItem && storedPermissionItem.sessionId && storedPermissionItem.sessionId === this._sessionId) {
+      return true;
     }
+
+    return false;
   }
 
-  public getVstsPassthroughHeaders(appendMsaPassthroughHeader: boolean = false): Headers {
-    const headers = new Headers();
-    headers.append('Content-Type', 'application/json');
-    headers.append('Accept', 'application/json');
-    headers.append('Vstsauthorization', `Bearer ${this._vstsApiToken}`);
-    headers.append('MsaPassthrough', `${appendMsaPassthroughHeader}`);
-    return headers;
+  // Using Local storage for two reasons:
+  // 1. CacheService only caches for 1 minute which is too short for this scenario
+  // 2. Local variable can not be used as Deployment center angular components are re-instantiated if we move out
+  //    of Deployment center menu (say to Overview menu) and come back
+  // There are two options to use as pivot for storing permission
+  // 1. User token - this get auto refreshed every 60 minutes, hence stored value gets stale. Also this might be insecure.
+  // 2. Session Id - this changes if user does page refresh or changes login
+  // Choosing 2 as it seems longer-lived and is secure
+  private _storeAadCreatePermission(): void {
+    let storedPermissionItem = {
+      id: CreateAadAppPermissionStorageKey,
+      sessionId: this._sessionId,
+    };
+
+    // overwrite existing value
+    this._localStorageService.setItem(storedPermissionItem.id, storedPermissionItem);
   }
 
-  public getVstsDirectHeaders(appendMsaPassthroughHeader: boolean = true): Headers {
-    const headers = new Headers();
-    headers.append('Content-Type', 'application/json');
-    headers.append('Accept', 'application/json');
-    headers.append('Authorization', this.getToken());
-    headers.append('X-VSS-ForceMsaPassThrough', `${appendMsaPassthroughHeader}`);
-    return headers;
+  private _getVstsToken(): Observable<{ status: string; statusMessage: string; result: any }> {
+    return this._portalService
+      .getAdToken('azureTfsApi')
+      .first()
+      .switchMap(tokenData => {
+        if (!tokenData || !tokenData.result || !tokenData.result.token || !parseToken(tokenData.result.token)) {
+          return Observable.of({
+            status: 'failed',
+            statusMessage: this._translateService.instant(PortalResources.vstsTokenIsInvalid),
+            result: null,
+          });
+        } else {
+          return Observable.of({
+            status: 'succeeded',
+            statusMessage: null,
+            result: tokenData.result.token,
+          });
+        }
+      })
+      .catch(error => {
+        return Observable.of({
+          status: 'failed',
+          statusMessage: this._translateService.instant(PortalResources.vstsTokenFetchFailed).format(JSON.stringify(error)),
+          result: null,
+        });
+      });
   }
 
   public getToken(): string {

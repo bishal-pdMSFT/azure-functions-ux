@@ -1,28 +1,32 @@
-import React from 'react';
-import { TooltipHost } from 'office-ui-fabric-react';
+import { TooltipDelay, TooltipHost } from 'office-ui-fabric-react';
+import React, { useContext } from 'react';
 import { style } from 'typestyle';
-import { ReactComponent as InfoSvg } from '../../images/Common/info.svg';
+import { ReactComponent as InfoTooltipSvg } from '../../images/Common/InfoTooltip.svg';
+import { ThemeExtended } from '../../theme/SemanticColorsExtended';
+import { ThemeContext } from '../../ThemeContext';
 
 export interface InfoTooltipProps {
+  id: string;
   content: string;
-  className?: string;
+  iconClassName?: string;
 }
 
-export const defaultTooltipClass = style({
-  height: '10px',
-  width: '10px',
-  display: 'inline-block',
-});
+const defaultIconStyle = (theme: ThemeExtended) =>
+  style({
+    fill: theme.semanticColors.infoIcon,
+    marginLeft: '2px',
+  });
 
 export const InfoTooltip = (props: InfoTooltipProps) => {
-  const className = props.className ? props.className : defaultTooltipClass;
+  const { iconClassName } = props;
+  const theme = useContext(ThemeContext);
+
+  const iconStyle = iconClassName ? iconClassName : defaultIconStyle(theme);
+
   return (
-    <>
-      <TooltipHost content={props.content} calloutProps={{ gapSpace: 0 }}>
-        <span className={className}>
-          <InfoSvg />
-        </span>
-      </TooltipHost>
-    </>
+    /* Delay must be set to zero so that the screen reader can pick up the text */
+    <TooltipHost id={props.id} content={props.content} calloutProps={{ gapSpace: 0 }} delay={TooltipDelay.zero}>
+      <InfoTooltipSvg aria-describedby={props.id} focusable="true" tabIndex={0} className={iconStyle} />
+    </TooltipHost>
   );
 };

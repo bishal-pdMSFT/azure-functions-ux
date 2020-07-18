@@ -12,6 +12,7 @@ export interface Data {
 }
 
 export interface GetStartupInfo {
+  iframeAppName: string;
   iframeHostName: string;
 }
 
@@ -26,6 +27,12 @@ export interface StartupInfo<T> {
   crmInfo?: CrmInfo;
   featureInfo?: T;
   armEndpoint?: string;
+}
+
+export interface SendToken2 {
+  token?: string; // Arm
+  selfToken?: string;
+  graphToken?: string;
 }
 
 export interface CrmInfo {
@@ -89,12 +96,15 @@ export class Verbs {
   public static broadcastMessage = 'broadcast-message';
   public static setFrameboundEventFilter = 'set-framebound-event-filter';
 
+  public static hasPermission = 'has-permission';
+  public static hasLock = 'has-lock';
+
   // Requests from Ibiza
   public static sendStartupInfo = 'send-startup-info';
   public static sendAppSettingName = 'send-appSettingName';
   public static sendResourceId = 'send-resourceId';
   public static sendInputs = 'send-inputs';
-  public static sendToken = 'send-token';
+  public static sendToken2 = 'send-token2';
   public static sendOAuthInfo = 'send-oauth-info';
   public static sendNotificationStarted = 'send-notification-started';
   public static sendData = 'send-data';
@@ -130,12 +140,18 @@ export interface WebsiteId {
   SubscriptionId: string;
 }
 
-export interface OpenBladeInfo {
+export interface OpenBladeInfo<T = any> {
   detailBlade: string;
-  detailBladeInputs: any;
+  detailBladeInputs: T;
   extension?: string;
   openAsContextBlade?: boolean;
   openAsSubJourney?: boolean;
+}
+
+export interface FrameBladeParams<T = any> {
+  id?: string;
+  feature?: string;
+  data?: T;
 }
 
 export interface TimerEvent {
@@ -234,8 +250,10 @@ export enum PartSize {
   Custom = 99,
 }
 
+export type TokenType = 'graph' | 'azureTfsApi' | 'applicationinsightapi';
+
 export interface TokenResponse {
-  tokenType: 'graph' | 'azureTfsApi';
+  tokenType: TokenType;
   token: string;
 }
 
@@ -246,4 +264,24 @@ export interface BladeResult<T> {
 
 export interface EventFilter {
   allowedIFrameEventVerbs: string[];
+}
+
+export interface CheckPermissionRequest {
+  resourceId: string;
+  actions: string[];
+}
+
+export interface CheckPermissionResponse {
+  hasPermission: boolean;
+}
+
+export type LockType = 'ReadOnly' | 'Delete';
+
+export interface CheckLockRequest {
+  resourceId: string;
+  type: LockType;
+}
+
+export interface CheckLockResponse {
+  hasLock: boolean;
 }

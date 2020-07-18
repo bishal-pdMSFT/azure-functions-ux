@@ -1,18 +1,19 @@
 import { FormikProps } from 'formik';
-import { ActionButton } from 'office-ui-fabric-react/lib/Button';
 import { DetailsListLayoutMode, IColumn, SelectionMode } from 'office-ui-fabric-react/lib/DetailsList';
-import { Panel, PanelType } from 'office-ui-fabric-react/lib/Panel';
-import React from 'react';
+import React, { useState, useContext } from 'react';
 import { WithTranslation, withTranslation } from 'react-i18next';
 
-import DisplayTableWithEmptyMessage, {
-  defaultCellStyle,
-} from '../../../../components/DisplayTableWithEmptyMessage/DisplayTableWithEmptyMessage';
+import { defaultCellStyle } from '../../../../components/DisplayTableWithEmptyMessage/DisplayTableWithEmptyMessage';
 import IconButton from '../../../../components/IconButton/IconButton';
-import { VirtualApplication } from '../../../../models/WebAppModels';
-import { AppSettingsFormValues, Permissions } from '../AppSettings.types';
+import { AppSettingsFormValues } from '../AppSettings.types';
 import VirtualApplicationsAddEdit from './VirtualApplicationsAddEdit';
 import { PermissionsContext } from '../Contexts';
+import { VirtualApplication } from '../../../../models/site/config';
+import { TooltipHost, ICommandBarItemProps, PanelType } from 'office-ui-fabric-react';
+import CustomPanel from '../../../../components/CustomPanel/CustomPanel';
+import DisplayTableWithCommandBar from '../../../../components/DisplayTableWithCommandBar/DisplayTableWithCommandBar';
+import { ThemeContext } from '../../../../ThemeContext';
+import { dirtyElementStyle } from '../AppSettings.styles';
 
 export interface VirtualApplicationsState {
   showPanel: boolean;
@@ -20,62 +21,32 @@ export interface VirtualApplicationsState {
   currentItemIndex: number | null;
   createNewItem: boolean;
 }
-export class VirtualApplications extends React.Component<FormikProps<AppSettingsFormValues> & WithTranslation, VirtualApplicationsState> {
-  public static contextType = PermissionsContext;
-  public context: Permissions;
-  constructor(props) {
-    super(props);
-    this.state = {
-      showPanel: false,
-      currentVirtualApplication: null,
-      currentItemIndex: null,
-      createNewItem: false,
-    };
-  }
+const VirtualApplications: React.FC<FormikProps<AppSettingsFormValues> & WithTranslation> = props => {
+  const { app_write, editable, saving } = useContext(PermissionsContext);
+  const disableAllControls = !app_write || !editable || saving;
+  const theme = useContext(ThemeContext);
 
-  public render() {
-    const { values, t } = this.props;
-    const { editable, app_write } = this.context;
-    if (!values.virtualApplications) {
-      return null;
-    }
-    return (
-      <>
-        <ActionButton
-          id="app-settings-new-virtual-app-button"
-          disabled={!app_write || !editable}
-          onClick={this.createNewItem}
-          styles={{ root: { marginTop: '5px' } }}
-          iconProps={{ iconName: 'Add' }}>
-          {t('addNewVirtualDirectoryV3')}
-        </ActionButton>
-        <Panel
-          isOpen={this.state.showPanel}
-          type={PanelType.large}
-          onDismiss={this.onCancelPanel}
-          headerText={t('newApp')}
-          closeButtonAriaLabel={t('close')}>
-          <VirtualApplicationsAddEdit
-            virtualApplication={this.state.currentVirtualApplication!}
-            otherVirtualApplications={values.virtualApplications}
-            updateVirtualApplication={this.onClosePanel.bind(this)}
-            closeBlade={this.onCancelPanel.bind(this)}
-          />
-        </Panel>
-        <DisplayTableWithEmptyMessage
-          items={values.virtualApplications}
-          columns={this._getColumns()}
-          isHeaderVisible={true}
-          layoutMode={DetailsListLayoutMode.justified}
-          selectionMode={SelectionMode.none}
-          selectionPreservedOnEmptyClick={true}
-          emptyMessage={t('emptyVirtualDirectories')}
-        />
-      </>
-    );
-  }
+  const [showPanel, setShowPanel] = useState(false);
+  const [currentVirtualApplication, setCurrentVirtualApplication] = useState<VirtualApplication | null>(null);
+  const [currentItemIndex, setCurrentItemIndex] = useState<number | null>(null);
+  const [createNewItem, setCreateNewItem] = useState(false);
 
-  private createNewItem = () => {
+  const { t, values } = props;
+
+  const getCommandBarItems = (): ICommandBarItemProps[] => {
+    return [
+      {
+        key: 'app-settings-new-virtual-app-button',
+        onClick: createVirtualApplication,
+        disabled: disableAllControls,
+        iconProps: { iconName: 'Add' },
+        ariaLabel: t('addNewVirtualDirectory'),
+        name: t('addNewVirtualDirectoryV3'),
+      },
+    ];
+  };
+
+  const createVirtualApplication = () => {
     const blank: VirtualApplication = {
       physicalPath: '',
       virtualPath: '',
@@ -83,89 +54,123 @@ export class VirtualApplications extends React.Component<FormikProps<AppSettings
       preloadEnabled: false,
       virtualDirectory: true,
     };
-    this.setState({
-      showPanel: true,
-      currentVirtualApplication: blank,
-      createNewItem: true,
-      currentItemIndex: -1,
-    });
+    setShowPanel(true);
+    setCreateNewItem(true);
+    setCurrentItemIndex(-1);
+    setCurrentVirtualApplication(blank);
   };
 
-  private onCancelPanel = () => {
-    this.setState({ createNewItem: false, showPanel: false });
+  const onCancelPanel = () => {
+    setShowPanel(false);
+    setCreateNewItem(false);
   };
-  private onClosePanel = (item: VirtualApplication) => {
-    const { values, setValues } = this.props;
+
+  const onClosePanel = (item: VirtualApplication) => {
     const virtualApplications = [...values.virtualApplications];
-    if (!this.state.createNewItem) {
-      virtualApplications[this.state.currentItemIndex!] = item;
+    if (!createNewItem) {
+      virtualApplications[currentItemIndex!] = item;
     } else {
       virtualApplications.push(item);
     }
-    setValues({
+    props.setValues({
       ...values,
       virtualApplications,
     });
-    this.setState({ createNewItem: false, showPanel: false });
+    setCreateNewItem(false);
+    setShowPanel(false);
   };
 
-  private _onShowPanel = (item: VirtualApplication, index: number): void => {
-    this.setState({
-      showPanel: true,
-      currentVirtualApplication: item,
-      currentItemIndex: index,
-    });
+  const onShowPanel = (item: VirtualApplication, index: number): void => {
+    setShowPanel(true);
+    setCurrentVirtualApplication(item);
+    setCurrentItemIndex(index);
   };
 
-  private removeItem(index: number) {
-    const { values, setValues } = this.props;
+  const removeItem = (index: number) => {
     const virtualApplications: VirtualApplication[] = [...values.virtualApplications];
     virtualApplications.splice(index, 1);
-    setValues({
+    props.setValues({
       ...values,
       virtualApplications,
     });
-  }
+  };
 
-  private onRenderItemColumn = (item: VirtualApplication, index: number, column: IColumn) => {
-    const { t } = this.props;
-    const { editable, app_write } = this.context;
+  const isVirtualApplicationEqual = (virtualApp1: VirtualApplication, virtualApp2: VirtualApplication): boolean => {
+    if (
+      virtualApp1.physicalPath === virtualApp2.physicalPath &&
+      virtualApp1.virtualPath === virtualApp2.virtualPath &&
+      virtualApp1.virtualDirectory === virtualApp2.virtualDirectory &&
+      virtualApp1.preloadEnabled === virtualApp2.preloadEnabled
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const isAppSettingDirty = (index: number): boolean => {
+    const initialVirtualApplications = props.initialValues.virtualApplications;
+    const currentRow = values.virtualApplications[index];
+    const initialVirtualApplicationIndex = initialVirtualApplications.findIndex(x => isVirtualApplicationEqual(x, currentRow));
+    if (initialVirtualApplicationIndex >= 0) {
+      return false;
+    }
+    return true;
+  };
+
+  const onRenderItemColumn = (item: VirtualApplication, index: number, column: IColumn) => {
     if (!column || !item) {
       return null;
     }
 
     if (column.key === 'delete') {
       return item.virtualPath === '/' ? null : (
-        <IconButton
-          className={defaultCellStyle}
-          disabled={!app_write || !editable}
-          iconProps={{ iconName: 'Delete' }}
-          ariaLabel={t('delete')}
-          title={t('delete')}
-          onClick={() => this.removeItem(index)}
-        />
+        <TooltipHost
+          content={t('delete')}
+          id={`app-settings-virtual-applications-delete-tooltip-${index}`}
+          calloutProps={{ gapSpace: 0 }}
+          closeDelay={500}>
+          <IconButton
+            className={defaultCellStyle}
+            disabled={disableAllControls}
+            id={`app-settings-virtual-applications-delete-${index}`}
+            iconProps={{ iconName: 'Delete' }}
+            ariaLabel={t('delete')}
+            onClick={() => removeItem(index)}
+          />
+        </TooltipHost>
       );
     }
     if (column.key === 'edit') {
       return (
-        <IconButton
-          className={defaultCellStyle}
-          disabled={!app_write || !editable}
-          iconProps={{ iconName: 'Edit' }}
-          ariaLabel={t('edit')}
-          title={t('edit')}
-          onClick={() => this._onShowPanel(item, index)}
-        />
+        <TooltipHost
+          content={t('edit')}
+          id={`app-settings-virtual-applications-edit-tooltip-${index}`}
+          calloutProps={{ gapSpace: 0 }}
+          closeDelay={500}>
+          <IconButton
+            className={defaultCellStyle}
+            disabled={disableAllControls}
+            id={`app-settings-virtual-applications-edit-${index}`}
+            iconProps={{ iconName: 'Edit' }}
+            ariaLabel={t('edit')}
+            onClick={() => onShowPanel(item, index)}
+          />
+        </TooltipHost>
       );
     }
     if (column.key === 'type') {
       return <div className={defaultCellStyle}>{item.virtualDirectory ? t('directory') : t('application')}</div>;
     }
+    if (column.key === 'virtualPath') {
+      column.className = '';
+      if (isAppSettingDirty(index)) {
+        column.className = dirtyElementStyle(theme);
+      }
+    }
     return <div className={defaultCellStyle}>{item[column.fieldName!]}</div>;
   };
 
-  private _getColumns = () => {
-    const { t } = this.props;
+  const getColumns = () => {
     return [
       {
         key: 'virtualPath',
@@ -177,7 +182,7 @@ export class VirtualApplications extends React.Component<FormikProps<AppSettings
         data: 'string',
         isPadded: true,
         isResizable: true,
-        onRender: this.onRenderItemColumn,
+        onRender: onRenderItemColumn,
       },
       {
         key: 'physicalPath',
@@ -185,11 +190,11 @@ export class VirtualApplications extends React.Component<FormikProps<AppSettings
         fieldName: 'physicalPath',
         minWidth: 210,
         maxWidth: 350,
-        isRowHeader: true,
+        isRowHeader: false,
         data: 'string',
         isPadded: true,
         isResizable: true,
-        onRender: this.onRenderItemColumn,
+        onRender: onRenderItemColumn,
       },
 
       {
@@ -198,34 +203,62 @@ export class VirtualApplications extends React.Component<FormikProps<AppSettings
         fieldName: 'virtualDirectory',
         minWidth: 210,
         maxWidth: 350,
-        isRowHeader: true,
+        isRowHeader: false,
         data: 'string',
         isPadded: true,
         isResizable: true,
-        onRender: this.onRenderItemColumn,
+        onRender: onRenderItemColumn,
       },
       {
         key: 'delete',
-        name: '',
-        minWidth: 16,
-        maxWidth: 16,
-        isResizable: true,
+        name: t('delete'),
+        fieldName: 'delete',
+        minWidth: 100,
+        maxWidth: 100,
+        isRowHeader: false,
+        isResizable: false,
         isCollapsable: false,
-        onRender: this.onRenderItemColumn,
-        ariaLabel: t('delete'),
+        onRender: onRenderItemColumn,
       },
       {
         key: 'edit',
-        name: '',
-        minWidth: 16,
-        maxWidth: 16,
-        isResizable: true,
+        name: t('edit'),
+        fieldName: 'edit',
+        minWidth: 100,
+        maxWidth: 100,
+        isRowHeader: false,
+        isResizable: false,
         isCollapsable: false,
-        onRender: this.onRenderItemColumn,
-        ariaLabel: t('edit'),
+        onRender: onRenderItemColumn,
       },
     ];
   };
-}
+
+  if (!values.virtualApplications) {
+    return null;
+  }
+  return (
+    <>
+      <DisplayTableWithCommandBar
+        commandBarItems={getCommandBarItems()}
+        items={values.virtualApplications || []}
+        columns={getColumns()}
+        isHeaderVisible={true}
+        layoutMode={DetailsListLayoutMode.justified}
+        selectionMode={SelectionMode.none}
+        selectionPreservedOnEmptyClick={true}
+        emptyMessage={t('emptyVirtualDirectories')}
+      />
+      <CustomPanel type={PanelType.medium} isOpen={showPanel} onDismiss={onCancelPanel} headerText={t('newApp')}>
+        <VirtualApplicationsAddEdit
+          virtualApplication={currentVirtualApplication!}
+          otherVirtualApplications={values.virtualApplications}
+          updateVirtualApplication={onClosePanel}
+          closeBlade={onCancelPanel}
+        />
+      </CustomPanel>
+    </>
+  );
+};
 
 export default withTranslation('translation')(VirtualApplications);
